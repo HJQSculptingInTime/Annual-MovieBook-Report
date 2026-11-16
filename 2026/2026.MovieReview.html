@@ -5,7 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>2026 观影报告 · 135 部</title>
 <style>
+/* ============================================================================
+   2026 观影报告 · 样式表（唯一一份 CSS）
+   ----------------------------------------------------------------------------
+   报告是「单文件静态页」：HTML + 内联 CSS + 内联 JS，无构建、无依赖。
+   数据由 douban_v3/rebuild.py 从豆瓣导出的 xlsx 算出，注入 <script> 里的 DATA 常量；
+   正文里的数字句子用 {{占位符}} 由脚本回填。改样式只改本文件，然后重跑 rebuild.py。
 
+   章节索引（编辑器里搜「§」直接跳到对应样式块；物理顺序不按编号排）：
+     §0  设计变量        :root 里的颜色/字体/宽度，改主题只动这里
+     §1  基础版式        body 背景光晕、胶片颗粒、选中色
+     §2  滚动进度与侧栏  .progress / .rail（右侧圆点导航）
+     §3  封面            .hero / .hero-year / .hero-count / .cover-split
+     §4  年份切换        .yearswitch（右上角下拉，两份报告共用类名）
+     §5  章节骨架        section / .sec-head / .lede / .fact / .sub-h
+     §6  01 评分与体量   .kpi-row / .starbars / .compare
+     §7  02 导演         .dgrid / .dcard
+     §8  03 出品地       .cband（按洲百分比条）/ .geo-*（国家排行）
+     §9  04 系列         .sgrid / .scard / .badge
+     §10 05 年度热词     .hotcloud / .cloud（标签）
+     §11 06 观影节律     .bars（逐月）/ .hours（24h）/ .decades（年代）
+     §12 07 2026 专题    .stage / .stage-dock / .y26-kpis / .fest / .mini
+     §13 08 年度五佳     .p1（第 1 名）/ .poster / .pcard
+     §14 页脚 与 悬浮提示 footer / .tip
+     §15 入场动效        .reveal → JS 加 .in 触发
+     §16 响应式          @media 980px / 640px
+
+   约定：
+   · 颜色一律走变量（var(--gold) 等），不要在规则里写死色值。
+   · 所有内容块初始 opacity:0，靠 IntersectionObserver 加 .in 显示（见 .reveal）；
+     若手动截图/打印需要「全部可见」，覆盖 .reveal{opacity:1!important;transform:none!important}。
+   · 金色 = 强调（数字、选中、五星），暗灰 = 次要信息，红色仅用于负面（一星/深夜档）。
+   · 布局优先用 grid/flex + gap，块间距多用 clamp() 适配窄屏。
+   ============================================================================ */
+
+
+
+  /* ─────────────────────────────────────────────────────────────
+     §0 设计变量 —— 改配色/字体/内容宽度只动这里
+     ───────────────────────────────────────────────────────────── */
   :root{
     --bg:#08080a;
     --panel:#101014;
@@ -24,6 +62,10 @@
     --mono:"SF Mono",ui-monospace,Consolas,"JetBrains Mono",monospace;
     --max:1180px;
   }
+
+  /* ─────────────────────────────────────────────────────────────
+     §1 基础版式 —— 背景光晕 + 胶片颗粒（body::before/::after）
+     ───────────────────────────────────────────────────────────── */
   *,*::before,*::after{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{
@@ -47,6 +89,10 @@
   a{color:inherit;text-decoration:none}
 
   /* ---------- progress + side nav ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §2 滚动进度条与右侧圆点导航
+     ───────────────────────────────────────────────────────────── */
   .progress{position:fixed;top:0;left:0;height:2px;width:0;background:linear-gradient(90deg,var(--red),var(--gold));z-index:60;transition:width .1s linear}
   .rail{position:fixed;right:26px;top:50%;transform:translateY(-50%);z-index:50;display:flex;flex-direction:column;gap:14px}
   .rail a{width:8px;height:8px;border-radius:50%;border:1px solid var(--line-2);display:block;transition:.3s;position:relative}
@@ -55,6 +101,10 @@
   .rail a:hover span{opacity:1}
 
   /* ---------- hero ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §3 封面 —— 2026 / 观影报告 / 总片数 / 剧集·短片 / 日期
+     ───────────────────────────────────────────────────────────── */
   .hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:90px 24px;overflow:hidden}
   .hero::before{
     content:"";position:absolute;inset:0;
@@ -93,6 +143,10 @@
   @keyframes drop{0%,100%{opacity:.25;transform:scaleY(.5);transform-origin:top}50%{opacity:1;transform:scaleY(1)}}
 
   /* ---------- sections ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §5 章节骨架 —— 每屏结构：序号 + 标题 + 侧栏说明 + 正文
+     ───────────────────────────────────────────────────────────── */
   main{position:relative;z-index:2}
   section{max-width:var(--max);margin:0 auto;padding:104px 28px;position:relative}
   section+section{border-top:1px solid rgba(255,255,255,.055)}
@@ -111,6 +165,10 @@
   .stat .d b{color:var(--gold);font-weight:500}
 
   /* ---------- month chart ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §11 06 观影节律 —— 逐月柱状图（悬停随机抽一部当月五星）
+     ───────────────────────────────────────────────────────────── */
   .chart{position:relative;padding:38px 0 0}
   .bars{display:flex;align-items:stretch;gap:clamp(6px,1.4vw,20px);height:300px;border-bottom:1px solid var(--line)}
   .bar{flex:1;display:flex;flex-direction:column;height:100%;cursor:pointer;position:relative}
@@ -123,6 +181,10 @@
   .bar .mo{font-family:var(--mono);font-size:11px;color:var(--dim-2);margin-top:12px;text-align:center;letter-spacing:.08em}
   .bar:hover .mo{color:var(--ink)}
   .chart-legend{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-top:22px;font-size:12px;color:var(--dim-2);font-family:var(--mono);letter-spacing:.08em}
+
+  /* ─────────────────────────────────────────────────────────────
+     §14b 悬浮提示（悬停柱子时跟随鼠标）
+     ───────────────────────────────────────────────────────────── */
   .tip{position:fixed;z-index:80;pointer-events:none;background:#16161c;border:1px solid var(--line-2);padding:12px 16px;border-radius:3px;font-size:12.5px;line-height:1.7;opacity:0;transform:translateY(6px);transition:.18s;max-width:260px;box-shadow:0 18px 40px rgba(0,0,0,.6)}
   .tip.show{opacity:1;transform:none}
   .tip b{color:var(--gold-2);font-weight:600;font-family:var(--serif);font-size:14px}
@@ -144,6 +206,10 @@
   .cmp.db .meter i{background:linear-gradient(90deg,#3f5148,var(--jade))}
 
   /* ---------- hours ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §11b 24 小时分布（0—5 点标红）
+     ───────────────────────────────────────────────────────────── */
   .hours{display:flex;align-items:flex-end;gap:3px;height:190px;margin-top:10px;padding-bottom:2px;border-bottom:1px solid var(--line)}
   .hour{flex:1;position:relative;height:100%;display:flex;align-items:flex-end;border-radius:2px 2px 0 0;transition:.3s;cursor:default}
   .hour i{display:block;width:100%;height:0;border-radius:2px 2px 0 0;background:linear-gradient(180deg,rgba(216,166,87,.9),rgba(216,166,87,.12));transition:height 1s cubic-bezier(.2,.7,.2,1)}
@@ -162,6 +228,10 @@
   .sub-h::after{content:"";flex:1;height:1px;background:var(--line)}
 
   /* ---------- decades ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §11c 年代分布（≤1960 合并，2020–25，当年单列）
+     ───────────────────────────────────────────────────────────── */
   .decades{display:flex;align-items:stretch;gap:clamp(6px,2vw,26px);height:240px;border-bottom:1px solid var(--line);padding-top:10px}
   .dec{flex:1;display:flex;flex-direction:column;height:100%;position:relative}
   .dec .track{flex:1;position:relative;width:100%}
@@ -223,6 +293,10 @@
   .row .i{font-family:var(--mono);font-size:10.5px;color:var(--dim-2)}
 
   /* ---------- footer ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §14 页脚（年份水印、一句总结、数据来源、版权）
+     ───────────────────────────────────────────────────────────── */
   footer{max-width:var(--max);margin:0 auto;padding:90px 28px 70px;text-align:center;position:relative;z-index:2}
   footer .fyear{font-family:var(--serif);font-size:clamp(46px,9vw,110px);font-weight:700;line-height:1;color:rgba(255,255,255,.05);letter-spacing:.04em}
   footer .fq{font-family:var(--serif);font-size:clamp(16px,2.2vw,22px);color:#cdc3b2;margin:26px 0 0;line-height:2}
@@ -232,9 +306,17 @@
   .top-link{display:inline-block;margin-top:26px;font-size:11px;font-family:var(--mono);letter-spacing:.22em;color:var(--dim);border-bottom:1px solid var(--line-2);padding-bottom:4px}
 
   /* ---------- reveal ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §15 入场动效 —— JS 用 IntersectionObserver 加 .in
+     ───────────────────────────────────────────────────────────── */
   .reveal{opacity:0;transform:translateY(26px);transition:opacity .9s cubic-bezier(.2,.7,.2,1),transform .9s cubic-bezier(.2,.7,.2,1);transition-delay:var(--d,0s)}
   .reveal.in{opacity:1;transform:none}
 
+
+  /* ─────────────────────────────────────────────────────────────
+     §16 响应式 —— 980px 折两列，640px 折单列
+     ───────────────────────────────────────────────────────────── */
   @media (max-width:900px){
     .two-col{grid-template-columns:1fr;gap:44px}
     .vs{grid-template-columns:1fr}
@@ -266,6 +348,10 @@
 .cover-split .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--dim-2);margin-right:6px}
 
 /* ---- KPI ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §6 01 评分与体量 —— 两个大数字 + 1~5 星柱状图 + 三条小结论
+     ───────────────────────────────────────────────────────────── */
 .kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden}
 .kpi{background:linear-gradient(180deg,#111116,#0d0d11);padding:36px 32px 32px}
 .kpi .k{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--dim-2);text-transform:uppercase}
@@ -285,6 +371,10 @@
 .sbar.on i{box-shadow:0 0 24px -6px rgba(216,166,87,.5)}
 
 /* ---- director cards ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §7 02 导演 —— 看过 ≥3 部的导演卡片
+     ───────────────────────────────────────────────────────────── */
 .dgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .dcard{
   border:1px solid var(--line);border-radius:3px;padding:24px 24px 22px;position:relative;overflow:hidden;
@@ -305,6 +395,10 @@
 .dnote{margin-top:22px;font-size:11.5px;color:var(--dim-2);line-height:1.9}
 
 /* ---- geo（第一出品地排行） ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §8 03 出品地 —— 顶部按洲百分比条 + 下方国家排行表
+     ───────────────────────────────────────────────────────────── */
 .cband{display:flex;height:62px;border:1px solid var(--line);border-radius:3px;overflow:hidden;margin-bottom:22px}
 .cband .cg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:64px;transition:flex-grow .6s ease}
 .cband .cg b{font-family:var(--serif);font-size:14px;font-weight:600;color:#fff;letter-spacing:.06em}
@@ -330,6 +424,10 @@
   font-size:11.5px;color:var(--dim-2);line-height:1.9}
 
 /* ---- series ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §9 04 系列 —— 系列卡（进度条 + 全通关/还差 N 部徽章）
+     ───────────────────────────────────────────────────────────── */
 .sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
 .scard{border:1px solid var(--line);border-radius:3px;padding:24px;background:linear-gradient(180deg,#111116,#0c0c10);transition:.35s}
 .scard:hover{border-color:var(--line-2)}
@@ -347,6 +445,10 @@
 .badge.ing{color:var(--dim);border:1px solid var(--line-2)}
 
 /* ---- hot words ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §10 05 年度热词 —— 手法/主题词云 + 自建标签
+     ───────────────────────────────────────────────────────────── */
 .hotcloud{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:10px 26px;max-width:1020px;margin:0 auto;padding:34px 0 26px}
 .hotcloud span{font-family:var(--serif);color:#b9b0a1;white-space:nowrap;transition:.35s;cursor:default;line-height:1.25}
 .hotcloud span em{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--dim-2);vertical-align:super;margin-left:4px;letter-spacing:0}
@@ -359,6 +461,10 @@
 @keyframes dmMove{from{transform:translateX(0)}to{transform:translateX(calc(-100vw - 120%))}}
 
 /* ---- 年份切换（可点开的下拉列表；两份报告共用同一套类名） ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §4 年份切换器（右上角下拉；2025 那份报告也用同一套类名）
+     ───────────────────────────────────────────────────────────── */
 .yearswitch{position:fixed;top:18px;right:20px;z-index:9999;font-family:var(--sans);font-size:12px}
 .ys-btn{display:flex;align-items:center;gap:9px;padding:7px 13px 7px 15px;border-radius:99px;
   border:1px solid rgba(255,255,255,.14);background:rgba(20,20,26,.85);color:var(--gold-2);
@@ -382,6 +488,10 @@
 .yr-link a:hover{color:var(--gold-2);border-color:var(--gold)}
 
 /* ---- 2026 stage ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §12 07 2026 新片 —— 数字从 0 长到 N，随后收缩成顶部标题
+     ───────────────────────────────────────────────────────────── */
 .stage{position:relative;height:100vh;overflow:hidden;transition:height .9s cubic-bezier(.4,0,.2,1)}
 .stage-sticky{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;transition:height .9s cubic-bezier(.4,0,.2,1)}
 .stage-sticky::before{content:"";position:absolute;width:min(78vw,720px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(216,166,87,.11),rgba(216,166,87,.03) 45%,transparent 66%);pointer-events:none;transition:opacity .5s}
@@ -404,6 +514,10 @@
 .y26-body{padding-top:8px}
 
 /* ---- 2026 kpis ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §12b 专题数据卡 / 电影节卡 / 月度分布
+     ───────────────────────────────────────────────────────────── */
 .y26-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden}
 .y26-kpis .y{padding:24px 22px;background:linear-gradient(180deg,#111116,#0d0d11)}
 .y26-kpis .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)}
@@ -444,6 +558,10 @@
 .cmp2 .c.new .meter i{background:linear-gradient(90deg,#7a3a33,var(--red))}
 
 /* ---- posters / top 5 ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §13 08 年度五佳 —— 第 1 名大卡 + 四张竖卡（海报位 + 占位封面）
+     ───────────────────────────────────────────────────────────── */
 .p1{display:grid;grid-template-columns:250px 1fr;gap:34px;border:1px solid rgba(216,166,87,.3);border-radius:3px;padding:28px;background:radial-gradient(600px 300px at 0% 0%,rgba(216,166,87,.08),transparent 65%),linear-gradient(180deg,#121217,#0b0b0e)}
 .p1 .poster{aspect-ratio:2/3}
 .pinfo{display:flex;flex-direction:column;justify-content:space-between;padding:6px 0}
@@ -519,6 +637,7 @@
   .hotcloud{gap:8px 16px}
   .geo-row{grid-template-columns:66px 1fr 40px 40px;gap:9px}
 }
+
 
 
 </style>
