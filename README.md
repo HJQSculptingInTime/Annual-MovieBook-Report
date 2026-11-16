@@ -14,7 +14,7 @@ E:\Annual Movie Report\
 ├─ 2025\
 │  └─ 2025.MovieReview.html      ← 2025 年度报告（87 部 · 平均 3.91）
 └─ 2026\
-   ├─ 2026观影报告.html           ← 2026 年度报告（135 部 · 平均 3.73）
+   ├─ 2026.MovieReview.html           ← 2026 年度报告（135 部 · 平均 3.73）
    └─ 海报\
       └─ 说明.txt                ← 海报命名与放法
 ```
@@ -56,7 +56,7 @@ E:\Annual Movie Report\
 
 ## 四、年末要补的 2026 数据
 
-用记事本或 VS Code 打开 `2026\2026观影报告.html`，搜索：
+用记事本或 VS Code 打开 `2026\2026.MovieReview.html`，搜索：
 
 ```
 ===== 年末只需要改这里
@@ -108,12 +108,12 @@ E:\Annual Movie Report\
 1. 新建文件夹 `2027\`，把新年度的报告放进去
 2. 在 `index.html` 的 `.years` 里照抄一张卡片，改年份、部数、链接
 3. 打开新报告，在右上角下拉里加上往年的入口
-4. 顺手把 `2026\2026观影报告.html` 里的下拉补一行指向 2027
+4. 顺手把 `2026\2026.MovieReview.html` 里的下拉补一行指向 2027
 
 下拉里对应的代码只有一行，形如：
 
 ```html
-<a role="menuitem" href="../2027/2027观影报告.html">2027</a>
+<a role="menuitem" href="../2027/2027.MovieReview.html">2027</a>
 ```
 
 ---
@@ -170,7 +170,7 @@ git push -u origin main
 | 坑 | 说明 |
 |---|---|
 | **少了 `.nojekyll`** | GitHub Pages 默认用 Jekyll 构建，可能忽略某些文件。根目录的空文件 `.nojekyll` 已经在，别删。 |
-| **中文文件名** | `2026观影报告.html`、`海报/` 这类文件名能正常访问（浏览器会自动转成 `%E8%A7%82...`），但复制链接时建议直接点站内链接，别手打。 |
+| **中文文件名** | `2026.MovieReview.html`、`海报/` 这类文件名能正常访问（浏览器会自动转成 `%E8%A7%82...`），但复制链接时建议直接点站内链接，别手打。 |
 | **大小写** | 服务器是 Linux，大小写敏感。改文件名时保持和链接里完全一致。 |
 
 > 换成自定义域名：Settings → Pages → Custom domain 填域名，再在 DNS 里加一条 CNAME 指向 `<用户名>.github.io`。
@@ -186,7 +186,7 @@ git push -u origin main
 | 场景 | 怎么做 |
 |---|---|
 | **换 / 加海报** | 仓库进入 `2026/海报/` → **Add file → Upload files** → 传 `《片名》海报.jpg` → Commit |
-| **换整份 2026 报告** | 仓库根 → **Add file → Upload files** → 选新的 `2026/2026观影报告.html` → 覆盖同名文件 → Commit |
+| **换整份 2026 报告** | 仓库根 → **Add file → Upload files** → 选新的 `2026/2026.MovieReview.html` → 覆盖同名文件 → Commit |
 | **加 2027** | 新建文件夹 `2027/` 上传报告，再改 `index.html` 的卡片和两份报告的年份下拉（见第五节） |
 
 ### 网页上传的固定动作
@@ -201,7 +201,7 @@ git push -u origin main
 GitHub Pages 有 CDN 缓存，**普通刷新可能还是旧的**：
 
 - 按 **Ctrl + F5**（Windows）强刷
-- 或者加个查询串：`…/2026/2026观影报告.html?v=2`
+- 或者加个查询串：`…/2026/2026.MovieReview.html?v=2`
 
 ### 三个不要动
 
