@@ -1,0 +1,2432 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026 观影报告 · 135 部</title>
+<style>
+/* ============================================================================
+   2026 观影报告 · 样式表（唯一一份 CSS）
+   ----------------------------------------------------------------------------
+   报告是「单文件静态页」：HTML + 内联 CSS + 内联 JS，无构建、无依赖。
+   数据由 douban_v3/rebuild.py 从豆瓣导出的 xlsx 算出，注入 <script> 里的 DATA 常量；
+   正文里的数字句子用 {{占位符}} 由脚本回填。改样式只改本文件，然后重跑 rebuild.py。
+
+   章节索引（编辑器里搜「§」直接跳到对应样式块；物理顺序不按编号排）：
+     §0  设计变量        :root 里的颜色/字体/宽度，改主题只动这里
+     §1  基础版式        body 背景光晕、胶片颗粒、选中色
+     §2  滚动进度与侧栏  .progress / .rail（右侧圆点导航）
+     §3  封面            .hero / .hero-year / .hero-count / .cover-split
+                          封面三栏入口：书（左）· 剧集（中）· 短片（右），点击进入聚焦视图
+                          书单 .bk-row：电脑与手机同为 书名/作者/出版社/ISBN/评分，窄屏改为横向滚动；
+                          一行放不下才收成两行并隐去 ISBN（年份），再窄才隐去出版社（layoutBooks 逐行实测文字宽）
+     §4  年份切换        .yearswitch（右上角下拉，两份报告共用类名）
+     §5  章节骨架        section / .sec-head / .lede / .fact / .sub-h
+     §6  01 评分与体量   .kpi-row / .starbars / .cmp2
+     §7  02 导演         .dgrid / .dcard
+     §8  03 出品地       .cband（按洲百分比条）/ .geo-*（国家排行）
+     §9  04 系列         .sgrid / .scard / .badge
+     §10 05 年度热词     .hotcloud / .cloud（标签）
+     §11 06 观影节律     .bars（逐月）/ .hours（24h）/ .decades（年代）
+     §12 07 2026 专题    .stage / .stage-dock / .y26-kpis / .fest / .mini
+     §13 08 年度五佳     .p1（第 1 名）/ .poster / .pcard
+     §14 页脚 与 悬浮提示 footer / .tip
+     §15 入场动效        .reveal → JS 加 .in 触发
+     §16 响应式          @media 980px / 640px
+
+   约定：
+   · 颜色一律走变量（var(--gold) 等），不要在规则里写死色值。
+   · 所有内容块初始 opacity:0，靠 IntersectionObserver 加 .in 显示（见 .reveal）；
+     若手动截图/打印需要「全部可见」，覆盖 .reveal{opacity:1!important;transform:none!important}。
+   · 金色 = 强调（数字、选中、五星），暗灰 = 次要信息，红色仅用于负面（一星/深夜档）。
+   · 布局优先用 grid/flex + gap，块间距多用 clamp() 适配窄屏。
+   ============================================================================ */
+
+
+
+  /* ─────────────────────────────────────────────────────────────
+     §0 设计变量 —— 改配色/字体/内容宽度只动这里
+     ───────────────────────────────────────────────────────────── */
+  :root{
+    --bg:#08080a;
+    --panel:#101014;
+    --line:rgba(255,255,255,.09);
+    --line-2:rgba(255,255,255,.16);
+    --ink:#ece6dc;
+    --dim:#8e8578;
+    --dim-2:#6b645b;
+    --gold:#d8a657;
+    --gold-2:#f0cf95;
+    --red:#c1554a;
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun",serif;
+    --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,Consolas,"JetBrains Mono",monospace;
+    --max:1180px;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     §1 基础版式 —— 背景光晕 + 胶片颗粒（body::before/::after）
+     ───────────────────────────────────────────────────────────── */
+  *,*::before,*::after{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:var(--sans);line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(900px 600px at 12% -8%, rgba(216,166,87,.13), transparent 62%),
+      radial-gradient(760px 520px at 92% 8%, rgba(193,85,74,.09), transparent 60%),
+      radial-gradient(900px 700px at 60% 108%, rgba(127,168,143,.06), transparent 62%);
+  }
+  body::after{
+    content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.55;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='.035'/></svg>");
+  }
+  ::selection{background:rgba(216,166,87,.28)}
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- progress + side nav ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §2 滚动进度条与右侧圆点导航
+     ───────────────────────────────────────────────────────────── */
+  .progress{position:fixed;top:0;left:0;height:2px;width:0;background:linear-gradient(90deg,var(--red),var(--gold));z-index:60;transition:width .1s linear}
+  .rail{position:fixed;right:26px;top:50%;transform:translateY(-50%);z-index:50;display:flex;flex-direction:column;gap:14px}
+  .rail a{width:8px;height:8px;border-radius:50%;border:1px solid var(--line-2);display:block;transition:.3s;position:relative}
+  .rail a.on{background:var(--gold);border-color:var(--gold);box-shadow:0 0 14px rgba(216,166,87,.6)}
+  .rail a span{position:absolute;right:18px;top:50%;transform:translateY(-50%);white-space:nowrap;font-size:11px;font-family:var(--mono);letter-spacing:.1em;color:var(--dim);opacity:0;transition:.25s;pointer-events:none}
+  .rail a:hover span{opacity:1}
+
+  /* ---------- hero ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §3 封面 —— 2026 / 观影报告 / 总片数 / 剧集·短片 / 日期
+     ───────────────────────────────────────────────────────────── */
+  .hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:90px 24px;overflow:hidden}
+  .hero::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(circle at 50% 42%, rgba(216,166,87,.1), transparent 55%);
+    pointer-events:none;
+  }
+  .sprocket{position:absolute;top:0;bottom:0;width:26px;opacity:.35;
+    background:repeating-linear-gradient(to bottom,transparent 0 14px,rgba(255,255,255,.16) 14px 26px,transparent 26px 40px);
+    mask-image:linear-gradient(to bottom,transparent,#000 12%,#000 88%,transparent);
+  }
+  .sprocket.l{left:0}.sprocket.r{right:0}
+  .hero-inner{position:relative;text-align:center;max-width:900px;z-index:2}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.42em;color:var(--gold);margin:0 0 30px;text-transform:uppercase}
+  .hero-year{
+    font-family:var(--serif);font-weight:700;line-height:.82;
+    font-size:clamp(88px,17vw,220px);letter-spacing:-.02em;margin:0;
+    background:linear-gradient(180deg,#f6e5c6 0%,#d8a657 45%,#8a6425 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 12px 40px rgba(216,166,87,.18));
+  }
+  .hero-title{font-family:var(--serif);font-size:clamp(26px,4.4vw,46px);letter-spacing:.5em;text-indent:.5em;font-weight:400;margin:14px 0 0;color:#e6dccb}
+  .hero-rule{width:64px;height:1px;background:var(--line-2);margin:36px auto 30px}
+  .hero-sub{margin:16px 0 0;color:var(--dim);font-size:14px;letter-spacing:.06em}
+  .hero-sub b{color:var(--ink);font-weight:500;font-family:var(--mono);letter-spacing:.02em}
+  .cover-hint{margin:12px 0 0;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--dim-2);text-align:center}
+  .hero-count{position:relative;display:flex;align-items:baseline;justify-content:center;gap:12px;margin:8px 0 0;padding-bottom:26px}
+  .hero-count .film-tag{position:static;margin:0 0 0 -9px;font-family:var(--mono);font-size:10px;letter-spacing:.3em;color:var(--dim-2)}
+  .hero-count .n{
+    font-family:var(--serif);font-size:clamp(72px,12vw,150px);font-weight:700;line-height:1.05;
+    background:linear-gradient(180deg,#fff6e6,#e7c188 60%,#b98a3f);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    font-variant-numeric:tabular-nums;
+  }
+  .hero-count .u{font-family:var(--serif);font-size:20px;color:var(--gold);letter-spacing:.2em}
+  .scroll-cue{display:inline-flex;flex-direction:column;align-items:center;gap:10px;margin-top:64px;font-size:10px;font-family:var(--mono);letter-spacing:.3em;color:var(--dim-2);text-transform:uppercase}
+  .scroll-cue i{display:block;width:1px;height:44px;background:linear-gradient(var(--gold),transparent);animation:drop 2.2s ease-in-out infinite}
+  @keyframes drop{0%,100%{opacity:.25;transform:scaleY(.5);transform-origin:top}50%{opacity:1;transform:scaleY(1)}}
+
+  /* ---------- sections ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §5 章节骨架 —— 每屏结构：序号 + 标题 + 侧栏说明 + 正文
+     ───────────────────────────────────────────────────────────── */
+  main{position:relative;z-index:2}
+  section{max-width:var(--max);margin:0 auto;padding:104px 28px;position:relative}
+  section+section{border-top:1px solid rgba(255,255,255,.055)}
+  .sec-head{display:flex;align-items:flex-end;gap:22px;margin-bottom:56px;flex-wrap:wrap}
+  .sec-idx{font-family:var(--mono);font-size:12px;letter-spacing:.24em;color:var(--gold);padding-bottom:14px;min-width:34px}
+  .sec-titles{flex:1;min-width:220px}
+  .sec-titles h2{font-family:var(--serif);font-size:clamp(26px,3.6vw,40px);font-weight:700;margin:0;letter-spacing:.06em}
+  .sec-titles p{margin:8px 0 0;font-size:11px;font-family:var(--mono);letter-spacing:.28em;color:var(--dim-2);text-transform:uppercase}
+  .sec-aside{font-size:13px;color:var(--dim);max-width:330px;padding-bottom:8px;line-height:1.8}
+  .lede{font-family:var(--serif);font-size:clamp(17px,2vw,21px);line-height:2;color:#cfc6b7;max-width:760px;margin:0 0 48px;letter-spacing:.02em}
+  .lede em{font-style:normal;color:var(--gold-2)}
+
+  /* ---------- month chart ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §11 06 观影节律 —— 逐月柱状图（悬停随机抽一部当月五星）
+     ───────────────────────────────────────────────────────────── */
+  .chart{position:relative;padding:38px 0 0}
+  .bars{display:flex;align-items:stretch;gap:clamp(6px,1.4vw,20px);height:300px;border-bottom:1px solid var(--line)}
+  .bar{flex:1;display:flex;flex-direction:column;height:100%;cursor:pointer;position:relative}
+  .bar .track{flex:1;position:relative;width:100%}
+  .bar .fill{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:64px;border-radius:2px 2px 0 0;background:linear-gradient(180deg,rgba(216,166,87,.95),rgba(216,166,87,.16));height:0;transition:height 1.1s cubic-bezier(.2,.7,.2,1),filter .3s}
+  .bar:hover .fill{filter:brightness(1.35) saturate(1.1)}
+  .bar.peak .fill{background:linear-gradient(180deg,#f0cf95,rgba(193,85,74,.35))}
+  .bar .cap{position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:11.5px;color:var(--dim);opacity:.72;transition:.3s;white-space:nowrap}
+  .bar:hover .cap{opacity:1;color:var(--gold-2)}
+  .bar .mo{font-family:var(--mono);font-size:11px;color:var(--dim-2);margin-top:12px;text-align:center;letter-spacing:.08em}
+  .bar:hover .mo{color:var(--ink)}
+  .chart-legend{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-top:22px;font-size:12px;color:var(--dim-2);font-family:var(--mono);letter-spacing:.08em}
+  .chart-sum{margin:10px 0 0;font-family:var(--mono);font-size:11px;line-height:1.9;letter-spacing:.04em;color:var(--dim-2)}
+
+  /* ─────────────────────────────────────────────────────────────
+     §14b 悬浮提示（悬停柱子时跟随鼠标）
+     ───────────────────────────────────────────────────────────── */
+  .tip{position:fixed;z-index:80;pointer-events:none;background:#16161c;border:1px solid var(--line-2);padding:12px 16px;border-radius:3px;font-size:12.5px;line-height:1.7;opacity:0;transform:translateY(6px);transition:.18s;max-width:260px;box-shadow:0 18px 40px rgba(0,0,0,.6)}
+  .tip.show{opacity:1;transform:none}
+  .tip b{color:var(--gold-2);font-weight:600;font-family:var(--serif);font-size:14px}
+  .tip .m{color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:.14em;display:block;margin-bottom:4px}
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:24px;margin-top:56px}
+  .fact{border-left:1px solid var(--line-2);padding-left:18px}
+  .fact h4{margin:0;font-size:12px;font-family:var(--mono);letter-spacing:.2em;color:var(--gold);font-weight:400;text-transform:uppercase}
+  .fact p{margin:8px 0 0;font-size:14px;color:#cbc2b3;line-height:1.9}
+  .fact p b{color:#fff;font-weight:600}
+
+  /* ---------- hours ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §11b 24 小时分布（0—5 点标红）
+     ───────────────────────────────────────────────────────────── */
+  .hours{display:flex;align-items:flex-end;gap:3px;height:190px;margin-top:10px;padding-bottom:2px;border-bottom:1px solid var(--line)}
+  .hour{flex:1;position:relative;height:100%;display:flex;align-items:flex-end;border-radius:2px 2px 0 0;transition:.3s;cursor:default}
+  .hour i{display:block;width:100%;height:0;border-radius:2px 2px 0 0;background:linear-gradient(180deg,rgba(216,166,87,.9),rgba(216,166,87,.12));transition:height 1s cubic-bezier(.2,.7,.2,1)}
+  .hour.late i{background:linear-gradient(180deg,rgba(193,85,74,.95),rgba(193,85,74,.12))}
+  .hour:hover i{filter:brightness(1.4)}
+  .hour b{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font-size:10px;font-family:var(--mono);color:var(--gold-2);opacity:0;transition:.2s;padding-bottom:5px}
+  .hour:hover b{opacity:1}
+  .hour-axis{display:flex;gap:3px;margin-top:10px}
+  .hour-axis span{flex:1;text-align:center;font-family:var(--mono);font-size:9.5px;color:var(--dim-2)}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:64px}
+  .sub-h{font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:var(--dim-2);text-transform:uppercase;margin:0 0 26px;display:flex;align-items:center;gap:12px}
+  .sub-h::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  /* ---------- decades ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §11c 年代分布（≤1960 合并，2020–25，当年单列）
+     ───────────────────────────────────────────────────────────── */
+  .decades{display:flex;align-items:stretch;gap:clamp(6px,2vw,26px);height:240px;border-bottom:1px solid var(--line);padding-top:10px}
+  .dec{flex:1;display:flex;flex-direction:column;height:100%;position:relative;min-width:0}
+  .dec .track{flex:1;position:relative;width:100%}
+  .dec i{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:58px;height:0;background:linear-gradient(180deg,rgba(216,166,87,.85),rgba(216,166,87,.1));border-radius:2px 2px 0 0;transition:height 1.1s cubic-bezier(.2,.7,.2,1)}
+  .dec.big i{background:linear-gradient(180deg,#efcb90,rgba(193,85,74,.25))}
+  .dec i span.n{position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap}
+  .dec.big i span.n{color:var(--gold-2)}
+  .dec em{font-family:var(--mono);font-size:10.5px;color:var(--dim-2);margin-top:10px;font-style:normal;letter-spacing:.04em;text-align:center}
+  .chip{font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:2px;color:var(--dim);white-space:nowrap;background:rgba(255,255,255,.015)}
+  .chip.s5{color:var(--gold-2);border-color:rgba(216,166,87,.3)}
+
+  .cloud{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:baseline}
+  .cloud b{font-family:var(--serif);font-weight:500;color:#ddd3c2;border-bottom:1px solid rgba(216,166,87,.28);padding-bottom:2px;transition:.3s}
+  .cloud b:hover{color:var(--gold-2);border-color:var(--gold)}
+  .cloud b em{font-style:normal;font-family:var(--mono);font-size:9px;color:var(--dim-2);margin-left:4px;vertical-align:super}
+
+
+  /* ---------- footer ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §14 页脚（年份水印、一句总结、数据来源、版权）
+     ───────────────────────────────────────────────────────────── */
+  footer{max-width:var(--max);margin:0 auto;padding:90px 28px 70px;text-align:center;position:relative;z-index:2}
+  footer .fyear{font-family:var(--serif);font-size:clamp(46px,9vw,110px);font-weight:700;line-height:1;color:rgba(255,255,255,.05);letter-spacing:.04em}
+  footer .fq{font-family:var(--serif);font-size:clamp(16px,2.2vw,22px);color:#cdc3b2;margin:26px 0 0;line-height:2}
+  footer .fq b{color:var(--gold-2);font-weight:600}
+  footer .src{font-size:11.5px;color:var(--dim-2);margin-top:36px;line-height:2;font-family:var(--mono);letter-spacing:.04em}
+.lkey{margin:10px 0 0;font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:rgba(246,240,230,.32);line-height:1.9}
+body.touch .lkey{display:none}
+@media (hover:none) and (pointer:coarse){.lkey{display:none!important}}
+  footer .copy{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--dim-2);margin:14px 0 0}
+  .top-link{display:inline-block;margin-top:26px;font-size:11px;font-family:var(--mono);letter-spacing:.22em;color:var(--dim);border-bottom:1px solid var(--line-2);padding-bottom:4px}
+
+  /* ---------- reveal ---------- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §15 入场动效 —— JS 用 IntersectionObserver 加 .in
+     ───────────────────────────────────────────────────────────── */
+  .reveal{opacity:0;transform:translateY(26px);transition:opacity .9s cubic-bezier(.2,.7,.2,1),transform .9s cubic-bezier(.2,.7,.2,1);transition-delay:var(--d,0s)}
+  .reveal.in{opacity:1;transform:none}
+
+
+  /* ─────────────────────────────────────────────────────────────
+     §16 响应式 —— 980px 折两列，640px 折单列
+     ───────────────────────────────────────────────────────────── */
+  @media (max-width:900px){
+    .two-col{grid-template-columns:1fr;gap:44px}
+    .rail{display:none}
+    .sec-aside{max-width:none}
+  }
+  @media (max-width:620px){
+    section{padding:74px 20px}
+    .sprocket{display:none}
+    .hero{padding:70px 20px}
+    .hero-title{letter-spacing:.34em}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+    .reveal{opacity:1;transform:none}
+  }
+
+/* ================= v2 components ================= */
+
+/* ---- cover ---- */
+.cover-split{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  width:min(560px,90vw);margin:22px auto 0;padding-top:16px;
+  border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--dim);letter-spacing:.14em;
+}
+.cover-split>*{min-width:0}
+.cover-split>*:first-child{justify-self:start}
+.cover-split>*:nth-child(2){justify-self:center}
+.cover-split>*:last-child{justify-self:end}
+.cover-split b{display:inline-block;font-family:var(--serif);font-weight:700;font-size:21px;letter-spacing:.02em;margin:0 6px 0 2px;
+  color:var(--gold);text-shadow:0 0 18px rgba(216,166,87,.35)}
+
+/* ── 封面 · 剧集：一行小字入口，点开才见名单（无背景填充） ── */
+.tv-hit{background:none;border:0;padding:0;margin:0;font:inherit;font-size:12.5px;color:inherit;
+  letter-spacing:inherit;cursor:pointer;white-space:nowrap;transition:color .22s}
+.tv-hit:hover{color:#e6dccb}
+.tv-hit:hover b{text-shadow:0 0 26px rgba(216,166,87,.85)}
+.tv-hit:focus-visible{outline:1px solid var(--gold);outline-offset:4px}
+.tv-wrap{display:block;max-height:0;overflow:hidden;text-align:left;
+  transition:max-height 1s cubic-bezier(.3,.7,.25,1)}
+.tv-wrap.open{max-height:1400px}
+.tv-wrap.closing{transition-duration:.55s}
+.tv-stage{min-height:0;overflow:hidden}
+.tv-tear{width:min(680px,84vw);height:1px;margin:12px auto 0;opacity:0;transform:scaleX(0);
+  background:
+    radial-gradient(40px 8px at 50% 50%, rgba(255,244,220,.92), rgba(240,207,149,.30) 45%, transparent 72%),
+    linear-gradient(90deg,
+      transparent 0,
+      rgba(255,255,255,.10) 28%,
+      rgba(255,255,255,.16) 50%,
+      rgba(255,255,255,.10) 72%,
+      transparent 100%);
+  transition:opacity .45s,transform .75s cubic-bezier(.2,.7,.2,1)}
+.tv-wrap.open .tv-tear{opacity:.9;transform:scaleX(1)}
+/* 聚焦时只用分割线上的那一条裂缝，列表自带的裂口隐藏，避免出现两条线 */
+.hero.focus .tv-tear{display:none}
+.tv-rows{width:min(680px,84vw);margin:8px auto 2px}
+/* 剧集 / 书籍结束语（短片不带）：与页脚电影结束语 footer .fq 同一套 UI */
+.tv-end{width:min(680px,84vw);margin:26px auto 0;font-family:var(--serif);
+  font-size:clamp(16px,2.2vw,22px);line-height:2;letter-spacing:0;color:#cdc3b2;text-align:center}
+.tv-end b{display:block;margin-top:0;font-family:inherit;font-size:inherit;letter-spacing:0;color:var(--gold-2);font-weight:600}
+/* 聚焦时列表首行与裂缝拉开距离 */
+.hero.focus .tv-rows{margin-top:190px}
+.hero.focus .bk-rows{margin-top:190px}
+
+/* ── 封面 · 书（左栏）：同样点开在分割线下列出，列随宽度自动收 ── */
+.bk-rows{width:min(860px,92vw);margin:42px auto 8px}
+.bk-end{width:min(860px,92vw)}
+.bk-row{display:grid;
+  grid-template-columns:minmax(0,1.35fr) minmax(0,1.15fr) minmax(0,.95fr) auto 62px;
+  grid-template-areas:"t a p y s";column-gap:16px;align-items:baseline;
+  padding:7px 0;border-bottom:1px solid rgba(255,255,255,.035)}
+.bk-row>span{min-width:0}
+.bk-t{grid-area:t;font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-a{grid-area:a;font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-p{grid-area:p;font-size:11px;color:var(--dim-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-y{grid-area:y;font-family:var(--mono);font-size:10px;color:var(--dim-2);letter-spacing:.05em;white-space:nowrap}
+.bk-s{grid-area:s;justify-self:end;white-space:nowrap}
+/* 书单与剧集 / 短片完全同一套逐行展开节奏（同关键帧、同时长、同错峰） */
+.tv-wrap.open .bk-row{animation:tvRowIn .95s cubic-bezier(.24,.72,.3,1) both;
+  animation-delay:calc(.06s + var(--i,0) * .06s)}
+.tv-wrap.closing .bk-row{animation:tvRowUp .45s ease both;
+  animation-delay:calc((11 - var(--i,0)) * .04s)}
+/* 书单星星逐颗点亮：与剧集同一节奏（每行晚 .08s，行内每颗晚 .05s） */
+.tv-wrap.open .bk-row .tv-stars b:nth-child(1){animation-delay:calc(.5s + var(--i,0) * .08s)}
+.tv-wrap.open .bk-row .tv-stars b:nth-child(2){animation-delay:calc(.55s + var(--i,0) * .08s)}
+.tv-wrap.open .bk-row .tv-stars b:nth-child(3){animation-delay:calc(.6s + var(--i,0) * .08s)}
+.tv-wrap.open .bk-row .tv-stars b:nth-child(4){animation-delay:calc(.65s + var(--i,0) * .08s)}
+.tv-wrap.open .bk-row .tv-stars b:nth-child(5){animation-delay:calc(.7s + var(--i,0) * .08s)}
+/* 电脑 / 手机同一套五列：书名 / 作者 / 出版社 / ISBN / 评分；窄屏改为横向滚动，不再收成两行 */
+.bk-isbn{display:inline}
+.bk-year{display:none}
+@media (max-width:720px){
+  .bk-rows{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:6px;
+    scrollbar-width:thin;scrollbar-color:rgba(216,166,87,.32) rgba(255,255,255,.05)}
+  .bk-rows::-webkit-scrollbar{height:4px}
+  .bk-rows::-webkit-scrollbar-track{background:rgba(255,255,255,.05)}
+  .bk-rows::-webkit-scrollbar-thumb{background:rgba(216,166,87,.32);border-radius:2px}
+  .bk-row{min-width:680px}
+}
+/* 一行放不下 → 两行，并隐去 ISBN / 年份（仅电脑端备用） */
+.bk-row.two{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 62px;grid-template-areas:"t t s" "a p s";row-gap:3px}
+.bk-row.two .bk-isbn,.bk-row.two .bk-year{display:none}
+/* 再窄 → 隐去出版社 */
+.bk-row.two.no-pub{grid-template-columns:minmax(0,1fr) 62px;grid-template-areas:"t s" "a s"}
+.bk-row.two.no-pub .bk-p{display:none}
+/* 短片：第二列放「年份 · 导演」，宽度自适应不挤压片名 */
+.tv-rows-short .tv-row{grid-template-columns:minmax(0,1fr) 168px 88px}
+.tv-rows-short .tv-year{text-align:left}
+.tv-row{display:grid;grid-template-columns:minmax(0,1fr) 104px 88px;gap:3px 20px;align-items:start;
+  padding:9px 2px;border-bottom:1px dashed rgba(255,255,255,.055);
+  transform:translateY(-8px);opacity:0;transition:transform .3s,opacity .3s}
+.tv-row:last-child{border-bottom:0}
+.tv-wrap.open .tv-row{animation:tvRowIn .95s cubic-bezier(.24,.72,.3,1) both;
+  animation-delay:calc(.06s + var(--i,0) * .06s)}
+@keyframes tvRowIn{
+  0%{transform:translateY(-8px);opacity:0;filter:blur(3px)}
+  55%{transform:translateY(1px);opacity:1;filter:blur(0)}
+  100%{transform:translateY(0);opacity:1;filter:blur(0)}
+}
+.tv-wrap.closing .tv-row{animation:tvRowUp .45s ease both;
+  animation-delay:calc((4 - var(--i,0)) * .04s)}
+@keyframes tvRowUp{to{transform:translateY(-8px);opacity:0}}
+.tv-zh{grid-column:1;font-family:var(--serif);font-size:15px;color:#ded5c6;letter-spacing:.02em;line-height:24px}
+.tv-se{display:inline-block;margin-left:.6em;vertical-align:top;font-family:var(--serif);font-size:15px;
+  color:#ded5c6;letter-spacing:.02em;line-height:24px;white-space:nowrap}
+.tv-sub{display:block;line-height:24px}
+.tv-year{grid-column:2;font-family:var(--mono);font-size:10.5px;color:var(--dim);line-height:24px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.tv-rate{grid-column:3;line-height:24px;text-align:right;white-space:nowrap}
+.tv-stars{font-size:10px;letter-spacing:.2em}
+.tv-stars b{font-weight:400;color:var(--gold);opacity:0}
+.tv-wrap.open .tv-stars b{animation:tvStar .26s ease both;animation-delay:var(--d,0s)}
+.tv-stars i{font-style:normal;color:rgba(255,255,255,.13)}
+@keyframes tvStar{from{opacity:0}to{opacity:1}}
+.tv-unrated{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--dim-2);
+  border-bottom:1px dashed rgba(255,255,255,.14);padding-bottom:1px}
+
+/* ── 聚焦：点「剧集 / 短片」，该组顶到封面计数位，正文与 Scroll 全部让位 ── */
+.hero-count{transition:opacity .28s ease}
+.focus-head{position:absolute;left:0;right:0;display:flex;align-items:baseline;justify-content:center;gap:12px;
+  padding-bottom:26px;opacity:0;transform:translateY(16px) scale(.96);pointer-events:none;
+  transition:opacity .3s ease,transform .42s cubic-bezier(.2,.7,.2,1)}
+.hero.focus .focus-head{opacity:1;transform:none;pointer-events:auto}
+.focus-head b{font-family:var(--serif);font-size:clamp(72px,12vw,150px);font-weight:700;line-height:1.05;
+  font-variant-numeric:tabular-nums;
+  background:linear-gradient(180deg,#fff6e6,#e7c188 60%,#b98a3f);-webkit-background-clip:text;background-clip:text;color:transparent}
+.fh-u{font-family:var(--serif);font-size:20px;color:var(--gold);letter-spacing:.2em}
+.fh-tag{font-family:var(--serif);font-size:14px;color:var(--dim);letter-spacing:.34em}
+.fh-back{position:static;margin-left:18px;background:none;border:0;padding:0 0 2px;cursor:pointer;
+  font-family:var(--mono);font-size:10px;letter-spacing:.26em;color:var(--dim-2);
+  border-bottom:1px solid rgba(255,255,255,.1);transition:color .2s,border-color .2s}
+.fh-back::before{content:"← ";opacity:.6}
+.fh-back:hover{color:var(--gold-2);border-color:var(--gold)}
+.focus-tear{position:absolute;left:50%;width:min(680px,84vw);height:1px;transform:translateX(-50%) scaleX(0);opacity:0;
+  background:linear-gradient(90deg,transparent 0,rgba(255,255,255,.09) 28%,rgba(240,207,149,.66) 50%,rgba(255,255,255,.09) 72%,transparent 100%);
+  transition:opacity .45s,transform .8s cubic-bezier(.2,.7,.2,1);pointer-events:none}
+.hero.focus .focus-tear{opacity:.92;transform:translateX(-50%) scaleX(1)}
+.hero.focus .cover-split{visibility:hidden;height:0;min-height:0;margin:0;padding:0;border:0;overflow:hidden}
+.hero.focus .hero-sub,.hero.focus .cover-hint,.hero.focus .scroll-cue{opacity:0;visibility:hidden;pointer-events:none}
+body.focus-mode main,body.focus-mode footer{display:none}
+/* 聚焦时整块位置固定成像素：隐藏顶部大标题、「12 本 书」与裂缝不再随窗口宽度缩放而移动 */
+body.focus-mode .eyebrow,
+body.focus-mode .hero-year,
+body.focus-mode .hero-title,
+body.focus-mode .hero-rule{display:none}
+body.focus-mode .focus-head{top:0!important}
+body.focus-mode .focus-head b{font-size:104px}
+body.focus-mode .focus-tear{top:150px!important}
+.hero.focus .hero-count{display:none}
+/* 聚焦时不再垂直居中：内容从顶部开始，宽度变化只影响高度，位置不漂 */
+body.focus-mode .hero{align-items:flex-start;padding-top:76px}
+@media (max-width:640px){
+  .focus-head{gap:9px}
+  .fh-tag{font-size:12px;letter-spacing:.26em}
+}
+@media (max-width:640px){
+  .tv-row{grid-template-columns:minmax(0,1fr) 86px 72px;gap:3px 12px}
+}
+@media (prefers-reduced-motion:reduce){
+  .tv-row,.bk-row,.tv-stars b{animation:none!important;transform:none!important;opacity:1!important;filter:none!important}
+  .tv-wrap{transition:none}
+}
+
+/* ---- KPI ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §6 01 评分与体量 —— 两个大数字 + 1~5 星柱状图 + 三条小结论
+     ───────────────────────────────────────────────────────────── */
+.kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-bottom:0;border-radius:3px 3px 0 0;overflow:hidden}
+.kpi{background:linear-gradient(180deg,#111116,#0d0d11);padding:36px 32px 32px}
+.kpi .k{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--dim-2);text-transform:uppercase}
+.kpi .v{font-family:var(--serif);font-size:clamp(46px,6.2vw,66px);line-height:1.05;margin-top:14px;color:#f5ecdb;font-variant-numeric:tabular-nums}
+.kpi .v span{font-size:15px;color:var(--dim);margin-left:10px;font-family:var(--sans);letter-spacing:.06em}
+.kpi .d{font-size:12.5px;color:var(--dim);margin-top:8px}
+.kpi .d b{color:var(--gold);font-weight:500}
+
+/* ---- star distribution ---- */
+.starbars{display:flex;align-items:stretch;gap:clamp(10px,3.4vw,54px);height:300px;margin-top:64px;padding-top:36px}
+.sbar{flex:1;display:flex;flex-direction:column;height:100%}
+.sbar .track{flex:1;position:relative}
+.sbar i{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,92px);border-radius:2px 2px 0 0;display:block}
+.sbar .n{position:absolute;bottom:calc(100% + 8px);left:0;right:0;text-align:center;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+.sbar .lb{margin-top:12px;text-align:center;font-size:11.5px;color:var(--dim);letter-spacing:.06em}
+.sbar .pc{text-align:center;font-size:10px;font-family:var(--mono);color:var(--dim-2);margin-top:2px}
+.sbar.on i{box-shadow:0 0 24px -6px rgba(216,166,87,.5)}
+
+/* ---- director cards ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §7 02 导演 —— 看过 ≥3 部的导演卡片
+     ───────────────────────────────────────────────────────────── */
+.dgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.dcard{
+  border:1px solid var(--line);border-radius:3px;padding:24px 24px 22px;position:relative;overflow:hidden;
+  background:linear-gradient(165deg,rgba(255,255,255,.025),transparent 45%),linear-gradient(180deg,#111116,#0c0c10);
+  transition:.4s;
+}
+.dcard:hover{border-color:rgba(216,166,87,.28);transform:translateY(-3px)}
+.dcard .dh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.dcard h3{font-family:var(--serif);font-size:19px;font-weight:600;margin:0;line-height:1.4}
+.dcard .cnt{font-family:var(--mono);font-size:11.5px;color:var(--gold);white-space:nowrap;padding-top:4px}
+.dcard .reg{font-size:11.5px;color:var(--dim);letter-spacing:.1em;margin-top:7px;font-family:var(--mono)}
+.dcard .avg{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:11.5px;color:var(--dim-2)}
+.dcard .avg b{font-family:var(--serif);font-size:15px;color:var(--gold-2);font-weight:600}
+.dcard .avg .abar{flex:1;height:2px;background:rgba(255,255,255,.07);position:relative;overflow:hidden}
+.dcard .avg .abar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#8a6a2c,var(--gold))}
+.dcard .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}
+.dcard .chips .chip{font-size:10.5px}
+.dnote{margin-top:22px;font-size:11.5px;color:var(--dim-2);line-height:1.9}
+
+/* ---- geo（第一出品地排行） ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §8 03 出品地 —— 顶部按洲百分比条 + 下方国家排行表
+     ───────────────────────────────────────────────────────────── */
+.cband{display:flex;height:62px;border:1px solid var(--line);border-radius:3px;overflow:hidden;margin-bottom:22px}
+.cband .cg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:64px;transition:flex-grow .6s ease}
+.cband .cg b{font-family:var(--serif);font-size:14px;font-weight:600;color:#fff;letter-spacing:.06em}
+.cband .cg span{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.72);letter-spacing:.04em}
+.geo-wrap{border:1px solid var(--line);border-radius:3px;padding:26px 28px 22px;
+  background:linear-gradient(180deg,#101015,#0b0b0e)}
+.geo-head{display:flex;justify-content:space-between;align-items:baseline;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;color:var(--dim-2);
+  padding-bottom:16px;border-bottom:1px solid var(--line)}
+.geo-note{color:var(--dim-2)}
+.geo-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 76px;margin-top:4px}
+.geo-row{display:grid;grid-template-columns:78px 1fr 46px 44px;gap:10px;align-items:center;
+  padding:10px 2px 10px 0;border-bottom:1px solid rgba(255,255,255,.045);font-size:13px}
+.geo-row:nth-last-child(-n+2){border-bottom:0}
+.geo-row .nm{color:#ded5c6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.02em}
+.geo-row .tr{height:6px;background:rgba(255,255,255,.06);border-radius:99px;overflow:hidden}
+.geo-row .tr i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,rgba(216,166,87,.35),var(--gold))}
+.geo-row .nu{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
+.geo-row .pc{font-family:var(--mono);font-size:10.5px;color:var(--dim-2);text-align:right}
+.geo-row:first-child .nm{color:var(--gold-2)}
+.geo-row:first-child .tr i{background:linear-gradient(90deg,#8a6a2c,#f0cf95)}
+.geo-tail{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
+  font-size:11.5px;color:var(--dim-2);line-height:1.9}
+
+/* ---- series ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §9 04 系列 —— 系列卡（进度条 + 全通关/还差 N 部徽章）
+     ───────────────────────────────────────────────────────────── */
+.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.scard{border:1px solid var(--line);border-radius:3px;padding:24px;background:linear-gradient(180deg,#111116,#0c0c10);transition:.35s}
+.scard:hover{border-color:var(--line-2)}
+.scard .sh{display:flex;justify-content:space-between;align-items:flex-start}
+.scard h4{margin:0;font-family:var(--serif);font-size:19px;font-weight:600}
+.scard .frac{font-family:var(--serif);font-size:26px;line-height:1;color:#f2e7d5}
+.scard .frac small{font-size:12px;color:var(--dim-2);font-family:var(--mono)}
+.scard .prog{height:4px;background:rgba(255,255,255,.07);border-radius:9px;overflow:hidden;margin:16px 0 12px}
+.scard .prog i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#8a6a2c,var(--gold))}
+.scard .meta{display:flex;justify-content:space-between;font-size:11px;color:var(--dim-2);font-family:var(--mono);letter-spacing:.06em}
+.scard .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.scard .chips .chip{font-size:10.5px}
+.badge{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;padding:2px 7px;border-radius:2px;margin-left:8px;vertical-align:middle}
+.badge.done{color:var(--gold);background:rgba(216,166,87,.10);border:1px solid rgba(216,166,87,.45)}
+.badge.ing{color:var(--dim);border:1px solid var(--line-2)}
+
+/* ---- hot words ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §10 05 年度热词 —— 手法/主题词云 + 自建标签
+     ───────────────────────────────────────────────────────────── */
+.hotcloud{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:10px 26px;max-width:1020px;margin:0 auto;padding:34px 0 26px}
+.hotcloud span{font-family:var(--serif);color:#b9b0a1;white-space:nowrap;transition:.35s;cursor:default;line-height:1.25}
+.hotcloud span em{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--dim-2);vertical-align:super;margin-left:4px;letter-spacing:0}
+.hotcloud span.g{color:var(--gold-2)}
+.hotcloud span.xl{color:var(--gold)}
+.hotcloud span:hover{color:#fff;transform:translateY(-2px)}
+.hotdiv{height:1px;background:var(--line);margin:34px 0 30px}
+.tagwrap{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+.tagwrap .cloud{flex:1}
+
+/* ---- 年份切换（可点开的下拉列表；两份报告共用同一套类名） ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §4 年份切换器（右上角下拉；2025 那份报告也用同一套类名）
+     ───────────────────────────────────────────────────────────── */
+.yearswitch{position:fixed;top:18px;right:20px;z-index:9999;font-family:var(--sans);font-size:12px}
+.ys-btn{display:flex;align-items:center;gap:9px;padding:7px 13px 7px 15px;border-radius:99px;
+  border:1px solid rgba(255,255,255,.14);background:rgba(20,20,26,.85);color:var(--gold-2);
+  font:inherit;font-weight:600;letter-spacing:.1em;cursor:pointer;
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:.22s}
+.ys-btn:hover{border-color:rgba(216,166,87,.5);background:rgba(26,26,33,.92)}
+.ys-caret{width:0;height:0;display:block;border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid currentColor;transition:transform .25s}
+.yearswitch.open .ys-caret{transform:rotate(180deg)}
+.ys-menu{position:absolute;top:calc(100% + 8px);right:0;min-width:132px;padding:6px;border-radius:8px;
+  background:rgba(17,17,22,.97);border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 18px 42px rgba(0,0,0,.55);
+  opacity:0;visibility:hidden;transform:translateY(-6px);transition:.22s}
+.yearswitch.open .ys-menu{opacity:1;visibility:visible;transform:none}
+.ys-menu a,.ys-menu .ys-item{display:block;padding:8px 12px;border-radius:5px;text-decoration:none;
+  font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--dim);transition:.18s}
+.ys-menu a:hover{background:rgba(255,255,255,.07);color:#fff}
+.ys-menu .ys-item.on{color:var(--gold);background:rgba(216,166,87,.12)}
+
+/* ---- 2026 stage ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §12 07 2026 新片 —— 数字从 0 长到 N，随后收缩成顶部标题
+     ───────────────────────────────────────────────────────────── */
+.stage{position:relative;height:100vh;overflow:hidden;transition:height .9s cubic-bezier(.4,0,.2,1)}
+.stage-sticky{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;transition:height .9s cubic-bezier(.4,0,.2,1)}
+.stage-sticky::before{content:"";position:absolute;width:min(78vw,720px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(216,166,87,.11),rgba(216,166,87,.03) 45%,transparent 66%);pointer-events:none;transition:opacity .5s}
+.stage.compact .stage-sticky::before{opacity:0}
+.stage-num{position:relative;font-family:var(--serif);line-height:1;transform-origin:50% 50%;will-change:transform,opacity;display:flex;flex-direction:column;align-items:center;gap:12px;
+  transition:transform .85s cubic-bezier(.4,0,.2,1),opacity .4s ease .45s}
+.stage-eyebrow{position:relative;font-family:var(--mono);font-size:10.5px;letter-spacing:.42em;color:var(--gold);margin:0 0 34px;opacity:.85;transition:opacity .4s}
+.stage-dock{position:absolute;top:30px;left:0;right:0;display:flex;align-items:baseline;justify-content:center;gap:12px;opacity:0;pointer-events:none;transition:opacity .5s ease .45s}
+.stage-dock b{font-family:var(--serif);font-size:54px;line-height:1;font-weight:700;color:var(--gold-2)}
+.stage-dock span{font-family:var(--mono);font-size:12px;letter-spacing:.24em;color:var(--dim)}
+.stage-num b{font-weight:700;font-size:clamp(120px,19vw,260px);letter-spacing:-.02em;
+  background:linear-gradient(180deg,#fff4e2,#e8c58c 55%,#a97c33);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.stage-num em{font-style:normal;font-family:var(--serif);font-size:clamp(14px,1.6vw,18px);color:var(--gold);letter-spacing:.34em;text-indent:.34em}
+.stage-cap{position:relative;margin-top:30px;font-size:13px;color:var(--dim);letter-spacing:.1em;transition:opacity .4s}
+.stage.compact{height:122px}
+.stage.compact .stage-num{transform:scale(.16);opacity:0}
+.stage.compact .stage-eyebrow,.stage.compact .stage-cap{opacity:0}
+.stage.compact .stage-dock{opacity:1}
+.y26-body{padding-top:8px}
+
+/* ---- 2026 kpis ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §12b 专题数据卡 / 电影节卡 / 月度分布
+     ───────────────────────────────────────────────────────────── */
+.y26-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.y26-kpis .y{padding:24px 22px;min-width:0;overflow:hidden;background:linear-gradient(180deg,#111116,#0d0d11)}
+.y26-kpis .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)}
+.y26-kpis .v{font-family:var(--serif);font-size:34px;margin-top:10px;color:#f2e8d7;line-height:1.1}
+.y26-kpis .v small{font-size:13px;color:var(--dim);font-family:var(--sans);margin-left:5px}
+.y26-kpis .d{font-size:11px;color:var(--dim-2);margin-top:6px}
+
+/* festivals */
+.fest-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:20px;width:100%}
+.fest{position:relative;display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:3px;padding:24px;background:linear-gradient(170deg,rgba(255,255,255,.024),transparent 50%),var(--panel);overflow:hidden}
+.fest .fidx{position:absolute;right:14px;bottom:20px;font-family:var(--serif);font-size:44px;font-weight:700;line-height:1;white-space:nowrap;color:rgba(255,255,255,.035);pointer-events:none}
+.fest .fsub{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;color:var(--dim-2);margin:6px 0 14px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.fest .fh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;min-width:0}
+.fest h4{margin:0;font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:.02em;min-width:0}
+.fest .tot{font-family:var(--serif);font-size:34px;line-height:1;color:var(--gold-2)}
+.fest .tot small{font-size:11px;color:var(--dim);font-family:var(--sans);margin-left:4px}
+.fest .frow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px dashed rgba(255,255,255,.07);font-size:12.5px;color:var(--dim)}
+.fest .frow:last-child{border-bottom:0;padding-bottom:0}
+.fest .frow b{font-family:var(--mono);font-weight:500;color:var(--ink)}
+.fest .tbd{color:var(--dim-2);letter-spacing:.1em}
+.fest .frow:last-child{margin-top:auto}
+.tbd-tag{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--gold);border:1px dashed rgba(216,166,87,.45);padding:1px 6px;border-radius:2px}
+
+/* mini bars for 2026 months */
+.mini{display:flex;align-items:flex-end;gap:8px;height:96px;margin-top:18px}
+.mini .mb{flex:1;display:flex;flex-direction:column;height:100%}
+.mini .mb .t{flex:1;position:relative}
+.mini .mb i{position:absolute;bottom:0;left:0;right:0;border-radius:2px 2px 0 0;background:linear-gradient(180deg,rgba(216,166,87,.9),rgba(216,166,87,.12))}
+.mini .mb em{font-style:normal;text-align:center;font-family:var(--mono);font-size:9.5px;color:var(--dim-2);margin-top:6px}
+.mini .mb b{position:absolute;bottom:calc(100% + 4px);left:0;right:0;text-align:center;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+.cmp2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
+.cmp2 .c{border:1px solid var(--line);border-radius:3px;padding:20px 22px;background:var(--panel)}
+.cmp2 .c .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)}
+.cmp2 .c .v{font-family:var(--serif);font-size:32px;margin-top:8px;color:#f1e7d6}
+.cmp2 .c .v small{font-size:12px;color:var(--dim);font-family:var(--sans)}
+.cmp2 .c .meter{height:3px;background:rgba(255,255,255,.07);margin-top:12px;border-radius:9px;overflow:hidden}
+.cmp2 .c .meter i{display:block;height:100%;background:linear-gradient(90deg,#8a6a2c,var(--gold))}
+.cmp2 .c.new .meter i{background:linear-gradient(90deg,#7a3a33,var(--red))}
+
+/* ---- posters / top 5 ---- */
+
+  /* ─────────────────────────────────────────────────────────────
+     §13 08 年度五佳 —— 第 1 名大卡 + 四张竖卡（海报位 + 占位封面）
+     ───────────────────────────────────────────────────────────── */
+.p1{display:grid;grid-template-columns:250px 1fr;gap:34px;border:1px solid rgba(216,166,87,.3);border-radius:3px;padding:28px;background:radial-gradient(600px 300px at 0% 0%,rgba(216,166,87,.08),transparent 65%),linear-gradient(180deg,#121217,#0b0b0e)}
+.p1 .poster{aspect-ratio:2/3}
+.pinfo{display:flex;flex-direction:column;justify-content:space-between;padding:6px 0}
+.pinfo .rank{font-family:var(--mono);font-size:10.5px;letter-spacing:.24em;color:var(--gold)}
+.pinfo h3{font-family:var(--serif);font-size:clamp(30px,3.6vw,44px);margin:14px 0 6px;font-weight:700;letter-spacing:.02em}
+.pinfo .sub{font-size:13px;color:var(--dim);letter-spacing:.06em}
+.pinfo .credits{display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:26px;font-size:12px;color:var(--dim)}
+.pinfo .credits b{color:#d8cfc0;font-weight:500}
+.pinfo .quote{margin-top:26px;padding-left:16px;border-left:1px solid rgba(216,166,87,.5);font-family:var(--serif);font-size:14.5px;line-height:1.95;color:var(--gold-2)}
+.pinfo .stars{margin-top:18px;color:var(--gold);font-size:13px;letter-spacing:.3em}
+.pinfo .stars span{color:rgba(255,255,255,.13)}
+
+.t5-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:14px}
+.pcard{border:1px solid var(--line);border-radius:3px;padding:14px;background:linear-gradient(180deg,#101015,#0b0b0e);transition:.4s}
+.pcard:hover{transform:translateY(-4px);border-color:rgba(216,166,87,.28)}
+.pcard .poster{aspect-ratio:2/3;margin-bottom:14px}
+.pcard .rk{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:8px}
+.pcard h4{font-family:var(--serif);font-size:17px;margin:0;font-weight:600;line-height:1.45}
+.pcard .cr{font-size:11px;color:var(--dim-2);margin-top:7px;line-height:1.9}
+.pcard .cr span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .stars{margin-top:10px;color:var(--gold);font-size:10px;letter-spacing:.22em}
+.pcard .stars span{color:rgba(255,255,255,.12)}
+
+.poster{position:relative;overflow:hidden;border-radius:2px;background:#0b0b0e;isolation:isolate}
+.poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s;z-index:2}
+.poster img.on{opacity:1}
+.poster .art{
+  position:absolute;inset:0;z-index:1;
+  background:
+    radial-gradient(120% 80% at 22% 8%,hsla(var(--h),55%,58%,.42),transparent 62%),
+    radial-gradient(110% 70% at 82% 96%,hsla(calc(var(--h) + 46),45%,42%,.3),transparent 66%),
+    linear-gradient(180deg,#111119,#08080b);
+}
+.poster .art::before{content:"";position:absolute;inset:7px;border:1px solid rgba(255,255,255,.08);z-index:1}
+.poster .art::after{
+  content:"";position:absolute;inset:0;opacity:.55;pointer-events:none;z-index:2;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.05'/></svg>");
+}
+.poster .art .ay{position:absolute;top:13px;right:13px;writing-mode:vertical-rl;font-family:var(--mono);font-size:8.5px;letter-spacing:.26em;color:rgba(255,255,255,.45);z-index:3}
+.poster .art .ac{position:absolute;left:50%;top:42%;width:76%;aspect-ratio:1;transform:translate(-50%,-50%);border:1px solid rgba(255,255,255,.13);border-radius:50%;z-index:1}
+.poster .art .pt{position:absolute;left:16px;bottom:46px;writing-mode:vertical-rl;text-orientation:upright;font-family:var(--serif);font-size:clamp(17px,1.9vw,22px);line-height:1.4;color:#f4ecdd;letter-spacing:.1em;z-index:3;max-height:72%;text-shadow:0 2px 18px rgba(0,0,0,.55)}
+.poster .art .ln{position:absolute;left:16px;right:16px;bottom:33px;height:1px;background:rgba(255,255,255,.18);z-index:3}
+.poster .art .py{position:absolute;left:16px;bottom:14px;font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;color:rgba(255,255,255,.5);z-index:3}
+
+.foot-note{margin-top:26px;font-size:11.5px;color:var(--dim-2);line-height:2;font-family:var(--mono);letter-spacing:.02em}
+.foot-note code{color:var(--gold);font-family:var(--mono);background:rgba(216,166,87,.08);padding:1px 6px;border-radius:2px}
+
+
+/* ---- responsive ---- */
+@media (max-width:980px){
+  .geo-grid{grid-template-columns:1fr;gap:0}
+  .geo-row:nth-last-child(-n+2){border-bottom:1px solid rgba(255,255,255,.045)}
+  .geo-row:last-child{border-bottom:0}
+  .dgrid{grid-template-columns:repeat(2,1fr)}
+  .sgrid{grid-template-columns:1fr}
+  .t5-row{grid-template-columns:repeat(2,1fr)}
+  .p1{grid-template-columns:180px 1fr;gap:22px}
+}
+@media (max-width:640px){
+  .kpi-row{grid-template-columns:1fr}
+  .dgrid{grid-template-columns:1fr}
+  .t5-row{grid-template-columns:1fr 1fr}
+  .p1{grid-template-columns:1fr}
+  .p1 .poster{max-width:210px}
+  .stage.compact{height:132px}
+  .hotcloud{gap:8px 16px}
+  .geo-row{grid-template-columns:66px 1fr 40px 40px;gap:9px}
+}
+
+
+
+/* ---------- 三大电影节卡片：任何宽度都保持三列一行，窄屏逐级缩小 ---------- */
+@media (max-width:560px){
+  .fest{padding:16px 14px}}
+@media (max-width:420px){
+  .fest{padding:10px 8px}}
+@media (max-width:400px){
+  .fest{padding:8px 6px}}
+@media (max-width:310px){
+  .fest{padding:7px 4px}}
+
+
+@media (max-width:560px){
+  .fest-grid{gap:10px}
+  .fest .tot{font-size:26px}
+  .fest .tot small{font-size:9px}
+  .fest .fsub{font-size:8px;letter-spacing:.1em;margin:5px 0 11px;padding-bottom:9px}
+  .fest .fidx{font-size:26px;right:10px;bottom:14px}
+  .fest .frow{font-size:11px;padding:8px 0;gap:6px}
+  .fest .fh{gap:8px}
+}
+@media (max-width:420px){
+  .fest-grid{gap:7px}
+  .fest h4{white-space:nowrap;overflow:hidden}
+  .fest .tot{font-size:17px}
+  .fest .tot small{font-size:8px;margin-left:2px}
+  .fest .fsub{font-size:7px;letter-spacing:.06em;margin:4px 0 8px;padding-bottom:7px}
+  .fest .fidx{font-size:15px;right:6px;bottom:28px}
+  .fest .frow{font-size:9.5px;padding:6px 0;gap:4px}
+  .fest .fh{gap:5px;min-width:0}
+}
+@media (max-width:400px){
+  .fest-grid{gap:5px}
+  .fest h4{white-space:nowrap;overflow:hidden}
+  .fest .tot{font-size:14px}
+  .fest .tot small{display:none}
+  .fest .fsub{font-size:6.5px;letter-spacing:.04em}
+  .fest .fidx{font-size:13px;right:5px;bottom:20px}
+  .fest .frow{font-size:9px;padding:5px 0;gap:3px}
+  .fest .fh{gap:4px;min-width:0}
+}
+@media (max-width:310px){
+  .fest-grid{gap:4px}
+  .fest .tot{font-size:13px}
+  .fest .frow{font-size:8.5px}
+}
+/* ---------- 2026 专题 KPI 三格：同样任何宽度都三列一行，窄屏逐级缩小 ---------- */
+@media (max-width:560px){
+  .y26-kpis .y{padding:16px 14px}
+  .y26-kpis .k{font-size:9px;letter-spacing:.12em}
+  .y26-kpis .v{font-size:26px;margin-top:8px}
+  .y26-kpis .v small{font-size:11px;margin-left:3px}
+  .y26-kpis .d{font-size:10px;margin-top:5px}
+}
+@media (max-width:420px){
+  .y26-kpis .y{padding:10px 8px}
+  .y26-kpis .k{font-size:8px;letter-spacing:.06em}
+  .y26-kpis .v{font-size:17px;margin-top:6px}
+  .y26-kpis .v small{font-size:9px;margin-left:2px}
+  .y26-kpis .d{font-size:9px;margin-top:4px;line-height:1.5}
+}
+@media (max-width:400px){
+  .y26-kpis .y{padding:8px 6px}
+  .y26-kpis .k{font-size:7px;letter-spacing:.02em}
+  .y26-kpis .v{font-size:15px;margin-top:5px;white-space:nowrap}
+  .y26-kpis .v small{font-size:8px}
+  .y26-kpis .d{font-size:8px;margin-top:3px;line-height:1.45}
+}
+@media (max-width:310px){
+  .y26-kpis .y{padding:7px 4px}
+  .y26-kpis .k{font-size:6.5px}
+  .y26-kpis .v{font-size:13px}
+  .y26-kpis .d{font-size:7.5px}
+}
+
+/* ---------- 年代分布柱图：九列严格等分，窄屏标签缩字保持单行（不溢出、柱底同一基线） ---------- */
+@media (max-width:560px){
+  .decades{gap:6px}
+  .dec em{font-size:9px;letter-spacing:.02em;white-space:nowrap}
+}
+@media (max-width:420px){
+  .decades{gap:5px}
+  .dec em{font-size:8px;letter-spacing:0}
+}
+@media (max-width:360px){
+  .decades{gap:4px}
+  .dec em{font-size:7px}
+}
+@media (max-width:330px){
+  .decades{gap:3px}
+  .dec em{font-size:6.6px}
+}
+@media (max-width:310px){
+  .decades{gap:2px}
+  .dec em{font-size:6.2px}
+}
+@media (max-width:300px){
+  .dec em{font-size:6px}
+}
+
+/* ========== 熄灯 / 开灯：只有 body.lights-out 一个状态，L 键切换 ========== */.spotlight{position:fixed;inset:0;z-index:4;pointer-events:none;mix-blend-mode:screen;opacity:0;
+  background:radial-gradient(520px 520px at var(--mx) var(--my),rgba(240,207,149,.16),rgba(216,166,87,.06) 36%,rgba(216,166,87,0) 70%);
+  transition:opacity .5s}
+body.touch .spotlight{display:none}
+body.lights-out .spotlight{opacity:1}
+
+.darkness{position:fixed;inset:0;z-index:30;pointer-events:none;opacity:0;transition:opacity .55s ease;
+  background:radial-gradient(circle 430px at var(--mx) var(--my),rgba(0,0,0,.04),rgba(0,0,0,.42) 30%,rgba(0,0,0,.84) 58%,rgba(0,0,0,.985) 100%)}
+body.lights-out .darkness{opacity:1}
+body.touch .darkness{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  .spotlight,.darkness{display:none!important}
+}</style>
+</head>
+<body>
+<div class="progress" id="progress" style="width: 0%;"></div>
+<nav class="yearswitch" id="yearSwitch" aria-label="年份切换">
+  <button class="ys-btn" id="ysBtn" aria-haspopup="true" aria-expanded="false">2026<i class="ys-caret"></i></button>
+  <div class="ys-menu" role="menu">
+    <a role="menuitem" href="https://hjqsculptingintime.github.io/Annual-movie-report/2025/2025.MovieReview.html">2025</a>
+    <span class="ys-item on" role="menuitem" aria-current="true">2026</span>
+    <!-- 以后加年份：照抄一行 <a role="menuitem" href="../2027/2027观影报告.html">2027</a> -->
+  </div>
+</nav>
+<nav class="rail" id="rail" aria-label="章节导航"><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s00" data-id="s00" class="on"><span>封面</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s01" data-id="s01"><span>01 · 评分与体量</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s02" data-id="s02"><span>02 · 导演</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s03" data-id="s03"><span>03 · 出品地</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s04" data-id="s04"><span>04 · 系列通关</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s05" data-id="s05"><span>05 · 年度热词</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s06" data-id="s06"><span>06 · 观影节律</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s07" data-id="s07"><span>07 · 2026 新片</span></a><a href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s08" data-id="s08"><span>08 · 年度五佳</span></a></nav>
+
+<header class="hero" id="s00">
+  <div class="sprocket l"></div><div class="sprocket r"></div>
+  <div class="hero-inner">
+    <p class="eyebrow">Movie · Annual Review · 2026</p>
+    <div class="hero-year">2026</div>
+    <h1 class="hero-title">观影报告</h1>
+    <div class="hero-rule"></div>
+    <div class="hero-count"><span class="n" id="coverN">135</span><span class="u">部</span><span class="film-tag">电影长片</span></div>
+    <div class="focus-head" id="focusHead">
+      <b id="fhN">6</b><span class="fh-u">部</span><span class="fh-tag" id="fhTag">剧集</span>
+      <button class="fh-back" id="fhBack">电影长片</button>
+    </div>
+    <div class="focus-tear" id="focusTear"></div>
+    <div class="cover-split">
+      <span><button class="tv-hit" id="bkHit" aria-expanded="false" aria-controls="bkWrap"><b id="bkN">12</b> 本书</button></span>
+      <span><button class="tv-hit" id="tvHit" aria-expanded="false" aria-controls="tvWrap"><b id="tvN">6</b> 部剧集</button></span>
+      <span><button class="tv-hit" id="shHit" aria-expanded="false" aria-controls="shWrap"><b id="shN">2</b> 部短片</button></span>
+    </div>
+    <p class="cover-hint">（书籍、剧集、短片可点击查看详情）</p>
+    <div class="tv-wrap" id="tvWrap">
+      <div class="tv-stage">
+        <div class="tv-tear"></div>
+        <div class="tv-rows">
+          <div class="tv-row" style="--i:0">
+            <span class="tv-zh">爱，死亡与机器人<span class="tv-se">第一季</span></span>
+            <span class="tv-year">2019 · 18 集</span>
+            <span class="tv-rate tv-stars"><b style="--d:.5s">★</b><b style="--d:.55s">★</b><b style="--d:.6s">★</b><b style="--d:.65s">★</b><i>★</i></span>
+          </div>
+          <div class="tv-row" style="--i:1">
+            <span class="tv-zh">绝命毒师<span class="tv-se">第一季</span></span>
+            <span class="tv-year">2008 · 7 集</span>
+            <span class="tv-rate tv-stars"><b style="--d:.58s">★</b><b style="--d:.63s">★</b><b style="--d:.68s">★</b><b style="--d:.73s">★</b><i>★</i></span>
+          </div>
+          <div class="tv-row" style="--i:2">
+            <span class="tv-zh">赛博朋克：边缘行者<span class="tv-se">第一季</span></span>
+            <span class="tv-year">2022 · 10 集</span>
+            <span class="tv-rate"><span class="tv-unrated">未评分</span></span>
+          </div>
+          <div class="tv-row" style="--i:3">
+            <span class="tv-zh">繁花</span>
+            <span class="tv-year">2023 · 30 集</span>
+            <span class="tv-rate tv-stars"><b style="--d:.74s">★</b><b style="--d:.79s">★</b><b style="--d:.84s">★</b><b style="--d:.89s">★</b><b style="--d:.94s">★</b></span>
+          </div>
+          <div class="tv-row" style="--i:4">
+            <span class="tv-zh">人生切割术<span class="tv-se"><span class="tv-sub">第一季</span><span class="tv-sub">第二季</span></span></span>
+            <span class="tv-year"><span class="tv-sub">2022 · 9 集</span><span class="tv-sub">2025 · 10 集</span></span>
+            <span class="tv-rate">
+              <span class="tv-sub tv-stars"><b style="--d:.9s">★</b><b style="--d:.95s">★</b><b style="--d:1s">★</b><b style="--d:1.05s">★</b><b style="--d:1.1s">★</b></span>
+              <span class="tv-sub tv-stars"><b style="--d:1.15s">★</b><b style="--d:1.2s">★</b><b style="--d:1.25s">★</b><b style="--d:1.3s">★</b><i>★</i></span>
+            </span>
+          </div>
+        </div>
+        <p class="tv-end">「电影只有一次关灯，剧集是一段一段把夜里续上。」<b>——写给这六季</b></p>
+      </div>
+    </div>
+    <div class="tv-wrap" id="shWrap">
+      <div class="tv-stage">
+        <div class="tv-tear"></div>
+        <div class="tv-rows tv-rows-short">
+          <div class="tv-row" style="--i:0">
+            <span class="tv-zh">花样的年华</span>
+            <span class="tv-year">2001 · 王家卫</span>
+            <span class="tv-rate tv-stars"><b style="--d:.5s">★</b><b style="--d:.55s">★</b><b style="--d:.6s">★</b><b style="--d:.65s">★</b><b style="--d:.7s">★</b></span>
+          </div>
+          <div class="tv-row" style="--i:1">
+            <span class="tv-zh">老人与海</span>
+            <span class="tv-year">1999 · 亚历山大·彼德洛夫</span>
+            <span class="tv-rate tv-stars"><b style="--d:.58s">★</b><b style="--d:.63s">★</b><b style="--d:.68s">★</b><b style="--d:.73s">★</b><b style="--d:.78s">★</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tv-wrap" id="bkWrap">
+      <div class="tv-stage">
+        <div class="bk-rows">
+          <div class="bk-row" style="--i:0">
+            <span class="bk-t">平面国</span>
+            <span class="bk-a">[英]埃德温·A·艾勃特</span>
+            <span class="bk-p">上海文化出版社</span>
+            <span class="bk-y bk-year">2020</span>
+            <span class="bk-y bk-isbn">978-7-5535-2064-3</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><b>★</b></span>
+          </div>
+          <div class="bk-row" style="--i:1">
+            <span class="bk-t">五只小猪</span>
+            <span class="bk-a">[英]阿加莎·克里斯蒂</span>
+            <span class="bk-p">新星出版社</span>
+            <span class="bk-y bk-year">2025</span>
+            <span class="bk-y bk-isbn">978-7-5133-6131-6</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><b>★</b></span>
+          </div>
+          <div class="bk-row" style="--i:2">
+            <span class="bk-t">牙医谋杀案</span>
+            <span class="bk-a">[英]阿加莎·克里斯蒂</span>
+            <span class="bk-p">新星出版社</span>
+            <span class="bk-y bk-year">2023</span>
+            <span class="bk-y bk-isbn">978-7-5133-3945-2</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><i>★</i><i>★</i></span>
+          </div>
+          <div class="bk-row" style="--i:3">
+            <span class="bk-t">三口棺材</span>
+            <span class="bk-a">[美]约翰·迪克森·卡尔</span>
+            <span class="bk-p">新星出版社</span>
+            <span class="bk-y bk-year">2024</span>
+            <span class="bk-y bk-isbn">978-7-5133-5664-0</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><i>★</i><i>★</i></span>
+          </div>
+          <div class="bk-row" style="--i:4">
+            <span class="bk-t">犹大之窗</span>
+            <span class="bk-a">[美]约翰·迪克森·卡尔</span>
+            <span class="bk-p">新星出版社</span>
+            <span class="bk-y bk-year">2019</span>
+            <span class="bk-y bk-isbn">978-7-5133-3433-4</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><b>★</b></span>
+          </div>
+          <div class="bk-row" style="--i:5">
+            <span class="bk-t">风声</span>
+            <span class="bk-a">麦家</span>
+            <span class="bk-p">上海文艺出版社</span>
+            <span class="bk-y bk-year">2020</span>
+            <span class="bk-y bk-isbn">978-7-5321-7772-1</span>
+            <span class="bk-s"><span class="tv-unrated">未评</span></span>
+          </div>
+          <div class="bk-row" style="--i:6">
+            <span class="bk-t">花样年华</span>
+            <span class="bk-a">[英]汤尼·雷恩</span>
+            <span class="bk-p">广东人民出版社</span>
+            <span class="bk-y bk-year">2026</span>
+            <span class="bk-y bk-isbn">978-7-218-19003-7</span>
+            <span class="bk-s"><span class="tv-unrated">未评</span></span>
+          </div>
+          <div class="bk-row" style="--i:7">
+            <span class="bk-t">法兰西粉末之谜</span>
+            <span class="bk-a">[美]埃勒里·奎因</span>
+            <span class="bk-p">江苏凤凰文艺出版社</span>
+            <span class="bk-y bk-year">2026</span>
+            <span class="bk-y bk-isbn">978-7-5808-0451-8</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><b>★</b></span>
+          </div>
+          <div class="bk-row" style="--i:8">
+            <span class="bk-t">长夜难明</span>
+            <span class="bk-a">紫金陈</span>
+            <span class="bk-p">湖南文艺出版社</span>
+            <span class="bk-y bk-year">2023</span>
+            <span class="bk-y bk-isbn">978-7-5726-1197-1</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><i>★</i></span>
+          </div>
+          <div class="bk-row" style="--i:9">
+            <span class="bk-t">绝叫</span>
+            <span class="bk-a">[日]叶真中显</span>
+            <span class="bk-p">北京联合出版公司</span>
+            <span class="bk-y bk-year">2020</span>
+            <span class="bk-y bk-isbn">978-7-5596-4118-2</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><b>★</b></span>
+          </div>
+          <div class="bk-row" style="--i:10">
+            <span class="bk-t">钟表馆事件</span>
+            <span class="bk-a">[日]绫辻行人</span>
+            <span class="bk-p">新星出版社</span>
+            <span class="bk-y bk-year">2016</span>
+            <span class="bk-y bk-isbn">978-7-5133-2095-5</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><b>★</b></span>
+          </div>
+          <div class="bk-row" style="--i:11">
+            <span class="bk-t">阳光下的罪恶</span>
+            <span class="bk-a">[英]阿加莎·克里斯蒂</span>
+            <span class="bk-p">新星出版社</span>
+            <span class="bk-y bk-year">2025</span>
+            <span class="bk-y bk-isbn">978-7-5133-6067-8</span>
+            <span class="bk-s tv-stars"><b>★</b><b>★</b><b>★</b><b>★</b><i>★</i></span>
+          </div>
+        
+        </div>
+        <p class="tv-end bk-end">「电影会散场，剧集有结局，书要合上最后一页才算读完。」<b>——写给这十二本</b></p>
+      </div>
+    </div>
+    <p class="hero-sub" id="coverSub"><b>01.02</b> — <b>11.15</b> ／ 100 天观影 ／ 36,564 字短评</p>
+    <a class="scroll-cue" href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s01"><i></i>Scroll</a>
+  </div>
+</header>
+
+<main>
+
+<!-- 01 评分与体量 -->
+<section id="s01">
+  <div class="sec-head reveal">
+    <div class="sec-idx">01</div>
+    <div class="sec-titles"><h2>评分与体量</h2><p>Ratings &amp; Volume</p></div>
+    <div class="sec-aside">135 部电影，135 次打分，一次没落下。平均 3.73 分，比豆瓣给同一批片的 7.85 分（折合 5 分制约 3.93）更严一点。</div>
+  </div>
+  <div class="kpi-row reveal">
+    <div class="kpi">
+      <div class="k">平均分 / Average</div>
+      <div class="v" id="avgMine">3.73<span>/ 5</span></div>
+      <div class="d">折合十分制 <b id="avgMine10">7.46</b>，豆瓣同批 <b id="avgDb">7.85</b></div>
+    </div>
+    <div class="kpi">
+      <div class="k">短评总字数 / Words</div>
+      <div class="v" id="totalChars">36,564<span>字</span></div>
+      <div class="d">平均每部 <b id="avgChars">271</b> 字，全部 135 部都写了</div>
+    </div>
+  </div>
+  <div class="starbars reveal" id="starbars"><div class="sbar on">
+    <div class="track"><i style="height:100.0%;background:linear-gradient(180deg,#e0b062,#e0b06226)">
+      <span class="n">47</span></i></div>
+    <div class="lb">★★★★★</div>
+    <div class="pc">34.8%</div>
+  </div><div class="sbar ">
+    <div class="track"><i style="height:78.7%;background:linear-gradient(180deg,#c08a4a,#c08a4a26)">
+      <span class="n">37</span></i></div>
+    <div class="lb">★★★★</div>
+    <div class="pc">27.4%</div>
+  </div><div class="sbar ">
+    <div class="track"><i style="height:57.4%;background:linear-gradient(180deg,#8a7a63,#8a7a6326)">
+      <span class="n">27</span></i></div>
+    <div class="lb">★★★</div>
+    <div class="pc">20.0%</div>
+  </div><div class="sbar ">
+    <div class="track"><i style="height:31.9%;background:linear-gradient(180deg,#6b6157,#6b615726)">
+      <span class="n">15</span></i></div>
+    <div class="lb">★★</div>
+    <div class="pc">11.1%</div>
+  </div><div class="sbar ">
+    <div class="track"><i style="height:19.1%;background:linear-gradient(180deg,#a8483c,#a8483c26)">
+      <span class="n">9</span></i></div>
+    <div class="lb">★</div>
+    <div class="pc">6.7%</div>
+  </div></div>
+  <div class="facts" id="rateFacts"><div class="fact reveal" style="--d:0s"><h4>五星率</h4><p><b>34.8%</b>，47 部满分；一星只有 9 部</p></div><div class="fact reveal" style="--d:0.07s"><h4>打分习惯</h4><p>135 部全部打分，没有一部留白</p></div><div class="fact reveal" style="--d:0.14s"><h4>与豆瓣</h4><p>同批片豆瓣均分 <b>7.85</b>，我低约 0.20 分</p></div></div>
+</section>
+
+<!-- 02 导演 -->
+<section id="s02">
+  <div class="sec-head reveal">
+    <div class="sec-idx">02</div>
+    <div class="sec-titles"><h2>导演</h2><p>Directors ≥ 3</p></div>
+    <div class="sec-aside">看过 3 部及以上的导演共 9 位。只集中在同一系列里的导演不在其中——那是「补剧集」，不是「看作者」。</div>
+  </div>
+  <p class="lede reveal">阿尔弗雷德·希区柯克一个人贡献了 6 部，横跨 1935 到 1959；比利·怀尔德的 4 部，从 4 月看到 6 月。这一年我确实在<em>追作者</em>。</p>
+  <div class="dgrid" id="dgrid">
+  <article class="dcard reveal" style="--d:0s">
+    <div class="dh"><h3>阿尔弗雷德·希区柯克</h3><span class="cnt">6 部</span></div>
+    <div class="reg">英国 / 美国导演</div>
+    <div class="avg"><b>3.8</b><span>/ 5</span>
+      <span class="abar"><i style="width:76%"></i></span></div>
+    <div class="chips"><span class="chip s5">西北偏北</span><span class="chip s5">贵妇失踪记</span><span class="chip ">史密斯夫妇</span><span class="chip ">三十九级台阶</span><span class="chip ">电话谋杀案</span><span class="chip ">火车怪客</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0.06s">
+    <div class="dh"><h3>比利·怀尔德</h3><span class="cnt">4 部</span></div>
+    <div class="reg">奥匈帝国 / 美国导演</div>
+    <div class="avg"><b>4.5</b><span>/ 5</span>
+      <span class="abar"><i style="width:90%"></i></span></div>
+    <div class="chips"><span class="chip s5">桃色公寓</span><span class="chip ">热情如火</span><span class="chip s5">双重赔偿</span><span class="chip s5">倒扣的王牌</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0.12s">
+    <div class="dh"><h3>弗朗索瓦·欧容</h3><span class="cnt">4 部</span></div>
+    <div class="reg">法国导演</div>
+    <div class="avg"><b>4.5</b><span>/ 5</span>
+      <span class="abar"><i style="width:90%"></i></span></div>
+    <div class="chips"><span class="chip ">秋日何时来</span><span class="chip s5">泳池情杀案</span><span class="chip s5">登堂入室</span><span class="chip ">八美图</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0s">
+    <div class="dh"><h3>丹尼斯·维伦纽瓦</h3><span class="cnt">4 部</span></div>
+    <div class="reg">加拿大导演</div>
+    <div class="avg"><b>4.0</b><span>/ 5</span>
+      <span class="abar"><i style="width:80%"></i></span></div>
+    <div class="chips"><span class="chip ">降临</span><span class="chip s5">银翼杀手2049</span><span class="chip ">沙丘</span><span class="chip ">沙丘2</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0.06s">
+    <div class="dh"><h3>王家卫</h3><span class="cnt">3 部</span></div>
+    <div class="reg">中国香港导演</div>
+    <div class="avg"><b>5.0</b><span>/ 5</span>
+      <span class="abar"><i style="width:100%"></i></span></div>
+    <div class="chips"><span class="chip s5">春光乍泄</span><span class="chip s5">重庆森林</span><span class="chip s5">堕落天使</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0.12s">
+    <div class="dh"><h3>伊尔蒂科·茵叶蒂</h3><span class="cnt">3 部</span></div>
+    <div class="reg">匈牙利导演</div>
+    <div class="avg"><b>4.3</b><span>/ 5</span>
+      <span class="abar"><i style="width:86%"></i></span></div>
+    <div class="chips"><span class="chip s5">肉与灵</span><span class="chip ">吾妻之话</span><span class="chip s5">寂静的朋友</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0s">
+    <div class="dh"><h3>朴赞郁</h3><span class="cnt">3 部</span></div>
+    <div class="reg">韩国导演</div>
+    <div class="avg"><b>4.0</b><span>/ 5</span>
+      <span class="abar"><i style="width:80%"></i></span></div>
+    <div class="chips"><span class="chip s5">分手的决心</span><span class="chip ">蝙蝠</span><span class="chip ">亲切的金子</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0.06s">
+    <div class="dh"><h3>卢卡斯·德霍特</h3><span class="cnt">3 部</span></div>
+    <div class="reg">比利时导演</div>
+    <div class="avg"><b>3.7</b><span>/ 5</span>
+      <span class="abar"><i style="width:74%"></i></span></div>
+    <div class="chips"><span class="chip ">亲密</span><span class="chip ">女孩</span><span class="chip ">懦夫</span></div>
+  </article>
+  <article class="dcard reveal" style="--d:0.12s">
+    <div class="dh"><h3>张艺谋</h3><span class="cnt">3 部</span></div>
+    <div class="reg">中国大陆导演</div>
+    <div class="avg"><b>1.3</b><span>/ 5</span>
+      <span class="abar"><i style="width:26%"></i></span></div>
+    <div class="chips"><span class="chip ">第二十条</span><span class="chip ">悬崖之上</span><span class="chip ">惊蛰无声</span></div>
+  </article></div>
+  <p class="dnote reveal">※ 已排除只集中在单一系列里的导演：大卫·叶茨（4 部）、沃卓斯基姐妹（4 部）、刘伟强 / 麦兆辉（3 部），以及不足 3 部的导演。</p>
+</section>
+
+<!-- 03 出品地 -->
+<section id="s03">
+  <div class="sec-head reveal">
+    <div class="sec-idx">03</div>
+    <div class="sec-titles"><h2>出品地</h2><p>First Production Country</p></div>
+    <div class="sec-aside">按豆瓣每部片「国家 / 地区」栏的第一项计算出品地。</div>
+  </div>
+  <p class="lede reveal">135 部片来自 <em>20 个国家和地区</em>。美国 39 部（28.9%）一家独大，中国大陆 22、法国 16 排在其后。</p>
+  <div class="cband reveal" id="cband">
+  <div class="cg" style="flex:49;background:#7a3a33">
+    <b>亚洲</b><span>36.3%</span>
+  </div>
+  <div class="cg" style="flex:47;background:#8a6a2c">
+    <b>欧洲</b><span>34.8%</span>
+  </div>
+  <div class="cg" style="flex:39;background:#3f5a4c">
+    <b>北美</b><span>28.9%</span>
+  </div></div>
+  <div class="geo-wrap reveal">
+    <div class="geo-head"><span>第一出品地 · 共 135 部</span><span class="geo-note">按出品数量排序</span></div>
+    <div class="geo-grid" id="geoGrid">
+  <div class="geo-row">
+    <span class="nm">美国</span>
+    <span class="tr"><i style="width:100.0%"></i></span>
+    <span class="nu">39 部</span>
+    <span class="pc">28.9%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">中国大陆</span>
+    <span class="tr"><i style="width:56.4%"></i></span>
+    <span class="nu">22 部</span>
+    <span class="pc">16.3%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">法国</span>
+    <span class="tr"><i style="width:41.0%"></i></span>
+    <span class="nu">16 部</span>
+    <span class="pc">11.9%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">中国香港</span>
+    <span class="tr"><i style="width:28.2%"></i></span>
+    <span class="nu">11 部</span>
+    <span class="pc">8.1%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">英国</span>
+    <span class="tr"><i style="width:25.6%"></i></span>
+    <span class="nu">10 部</span>
+    <span class="pc">7.4%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">韩国</span>
+    <span class="tr"><i style="width:25.6%"></i></span>
+    <span class="nu">10 部</span>
+    <span class="pc">7.4%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">匈牙利</span>
+    <span class="tr"><i style="width:7.7%"></i></span>
+    <span class="nu">3 部</span>
+    <span class="pc">2.2%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">西班牙</span>
+    <span class="tr"><i style="width:7.7%"></i></span>
+    <span class="nu">3 部</span>
+    <span class="pc">2.2%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">比利时</span>
+    <span class="tr"><i style="width:7.7%"></i></span>
+    <span class="nu">3 部</span>
+    <span class="pc">2.2%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">中国台湾</span>
+    <span class="tr"><i style="width:7.7%"></i></span>
+    <span class="nu">3 部</span>
+    <span class="pc">2.2%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">挪威</span>
+    <span class="tr"><i style="width:5.1%"></i></span>
+    <span class="nu">2 部</span>
+    <span class="pc">1.5%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">苏联</span>
+    <span class="tr"><i style="width:5.1%"></i></span>
+    <span class="nu">2 部</span>
+    <span class="pc">1.5%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">罗马尼亚</span>
+    <span class="tr"><i style="width:5.1%"></i></span>
+    <span class="nu">2 部</span>
+    <span class="pc">1.5%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">德国</span>
+    <span class="tr"><i style="width:5.1%"></i></span>
+    <span class="nu">2 部</span>
+    <span class="pc">1.5%</span>
+  </div>
+  <div class="geo-row">
+    <span class="nm">奥地利</span>
+    <span class="tr"><i style="width:5.1%"></i></span>
+    <span class="nu">2 部</span>
+    <span class="pc">1.5%</span>
+  </div></div>
+    <div class="geo-tail" id="geoTail">另有 5 个国家 / 地区各 1 部：意大利、伊朗、拉脱维亚、伊拉克、日本。</div>
+  </div>
+</section>
+
+<!-- 04 系列 -->
+<section id="s04">
+  <div class="sec-head reveal">
+    <div class="sec-idx">04</div>
+    <div class="sec-titles"><h2>系列通关</h2><p>Sagas &amp; Franchises</p></div>
+    <div class="sec-aside">6 个系列，18 部电影，占全年 13.3%。其中 4 个系列已经通关——哈利·波特前两部系去年所观。</div>
+  </div>
+  <p class="lede reveal">看系列片的方式很像<em>打卡</em>：哈利·波特 6 部、黑客帝国 4 部、无间道 3 部。沙丘还差 1 部，蓝白红三部曲还差 2 部。</p>
+  <div class="sgrid" id="sgrid"><article class="scard reveal" style="--d:0s">
+    <div class="sh">
+      <h4>哈利·波特<span class="badge done">全通关</span><span class="badge ing">前 2 部去年已观</span></h4>
+      <div class="frac">8<small>/8</small></div>
+    </div>
+    <div class="prog"><i style="width:100%"></i></div>
+    <div class="meta"><span>今年 6 部 · 均分 3.7 / 5</span><span>2026-02 — 2026-03</span></div>
+    <div class="chips"><span class="chip s5">哈利·波特与阿兹卡班的囚徒</span><span class="chip ">哈利·波特与火焰杯</span><span class="chip ">哈利·波特与凤凰社</span><span class="chip ">哈利·波特与混血王子</span><span class="chip ">哈利·波特与死亡圣器(上)</span><span class="chip ">哈利·波特与死亡圣器(下)</span></div>
+  </article><article class="scard reveal" style="--d:0.07s">
+    <div class="sh">
+      <h4>黑客帝国<span class="badge done">全通关</span></h4>
+      <div class="frac">4<small>/4</small></div>
+    </div>
+    <div class="prog"><i style="width:100%"></i></div>
+    <div class="meta"><span>均分 4.2 / 5</span><span>2026-01 — 2026-08</span></div>
+    <div class="chips"><span class="chip s5">黑客帝国</span><span class="chip s5">黑客帝国2：重装上阵</span><span class="chip ">黑客帝国3：矩阵革命</span><span class="chip ">黑客帝国：矩阵重启</span></div>
+  </article><article class="scard reveal" style="--d:0s">
+    <div class="sh">
+      <h4>无间道<span class="badge done">全通关</span></h4>
+      <div class="frac">3<small>/3</small></div>
+    </div>
+    <div class="prog"><i style="width:100%"></i></div>
+    <div class="meta"><span>均分 4.7 / 5</span><span>2026-02 — 2026-06</span></div>
+    <div class="chips"><span class="chip s5">无间道</span><span class="chip s5">无间道2</span><span class="chip ">无间道3：终极无间</span></div>
+  </article><article class="scard reveal" style="--d:0.07s">
+    <div class="sh">
+      <h4>沙丘<span class="badge ing">还差 1 部</span></h4>
+      <div class="frac">2<small>/3</small></div>
+    </div>
+    <div class="prog"><i style="width:67%"></i></div>
+    <div class="meta"><span>均分 4.0 / 5</span><span>2026-08 — 2026-08</span></div>
+    <div class="chips"><span class="chip ">沙丘</span><span class="chip ">沙丘2</span></div>
+  </article><article class="scard reveal" style="--d:0s">
+    <div class="sh">
+      <h4>银翼杀手<span class="badge done">全通关</span></h4>
+      <div class="frac">2<small>/2</small></div>
+    </div>
+    <div class="prog"><i style="width:100%"></i></div>
+    <div class="meta"><span>均分 5.0 / 5</span><span>2026-08 — 2026-08</span></div>
+    <div class="chips"><span class="chip s5">银翼杀手</span><span class="chip s5">银翼杀手2049</span></div>
+  </article><article class="scard reveal" style="--d:0.07s">
+    <div class="sh">
+      <h4>蓝白红三部曲<span class="badge ing">还差 2 部</span></h4>
+      <div class="frac">1<small>/3</small></div>
+    </div>
+    <div class="prog"><i style="width:33%"></i></div>
+    <div class="meta"><span>均分 4.0 / 5</span><span>2026-09 — 2026-09</span></div>
+    <div class="chips"><span class="chip ">蓝白红三部曲之白</span></div>
+  </article></div>
+</section>
+
+<!-- 05 热词 -->
+<section id="s05">
+  <div class="sec-head reveal">
+    <div class="sec-idx">05</div>
+    <div class="sec-titles"><h2>年度热词</h2><p>Words I Kept Using</p></div>
+    <div class="sec-aside">从 36,564 字短评里做词频统计，只保留<strong>手法</strong>与<strong>主题</strong>两类词，去掉了「结尾」「镜头」「配乐」这类通用词。括号里是涉及该主题的短评条数。</div>
+  </div>
+  <div class="hotcloud reveal" id="hotcloud"><span class="xl" style="font-size:53.0px">现实与虚构<em>23</em></span><span class="xl" style="font-size:41.9px">身份<em>16</em></span><span class="xl" style="font-size:35.1px">爱情<em>12</em></span><span class="g" style="font-size:31.5px">长镜头<em>10</em></span><span class="g" style="font-size:31.5px">女性<em>10</em></span><span class="g" style="font-size:31.5px">调度<em>10</em></span><span class="g" style="font-size:31.5px">历史<em>10</em></span><span class="g" style="font-size:29.6px">身体<em>9</em></span><span class="g" style="font-size:29.6px">政治<em>9</em></span><span class="g" style="font-size:27.7px">凝视<em>8</em></span><span class="g" style="font-size:27.7px">家庭<em>8</em></span><span class="g" style="font-size:25.7px">孤独<em>7</em></span><span class="g" style="font-size:25.7px">欲望<em>7</em></span><span class="g" style="font-size:25.7px">留白<em>7</em></span><span class="g" style="font-size:25.7px">死亡<em>7</em></span><span class="g" style="font-size:25.7px">暴力<em>7</em></span><span class="g" style="font-size:25.7px">光影<em>7</em></span><span class="" style="font-size:23.6px">创伤<em>6</em></span><span class="" style="font-size:23.6px">现实主义<em>6</em></span><span class="" style="font-size:23.6px">亲密<em>6</em></span><span class="" style="font-size:21.4px">时代<em>5</em></span><span class="" style="font-size:21.4px">阶级<em>5</em></span><span class="" style="font-size:21.4px">荒诞<em>5</em></span><span class="" style="font-size:21.4px">底层<em>5</em></span><span class="" style="font-size:21.4px">战争<em>5</em></span><span class="" style="font-size:21.4px">自由<em>5</em></span><span class="" style="font-size:21.4px">男性<em>5</em></span><span class="" style="font-size:21.4px">构图<em>5</em></span><span class="" style="font-size:19.1px">少年<em>4</em></span><span class="" style="font-size:19.1px">戏中戏<em>4</em></span><span class="" style="font-size:19.1px">手持<em>4</em></span><span class="" style="font-size:19.1px">特写<em>4</em></span><span class="" style="font-size:19.1px">救赎<em>4</em></span><span class="" style="font-size:19.1px">权力<em>4</em></span><span class="" style="font-size:19.1px">性别<em>4</em></span><span class="" style="font-size:19.1px">蒙太奇<em>4</em></span><span class="" style="font-size:19.1px">记忆<em>4</em></span><span class="" style="font-size:19.1px">宗教<em>4</em></span><span class="" style="font-size:19.1px">新浪潮<em>4</em></span><span class="" style="font-size:16.5px">青春<em>3</em></span><span class="" style="font-size:16.5px">类型片<em>3</em></span><span class="" style="font-size:16.5px">元电影<em>3</em></span><span class="" style="font-size:16.5px">表现主义<em>3</em></span><span class="" style="font-size:16.5px">父权<em>3</em></span><span class="" style="font-size:16.5px">宿命<em>3</em></span><span class="" style="font-size:16.5px">后现代<em>3</em></span><span class="" style="font-size:16.5px">景深<em>3</em></span><span class="" style="font-size:16.5px">视听语言<em>3</em></span><span class="" style="font-size:16.5px">信仰<em>3</em></span><span class="" style="font-size:13.0px">黑色电影<em>2</em></span><span class="" style="font-size:13.0px">非线性<em>2</em></span><span class="" style="font-size:13.0px">抽帧<em>2</em></span><span class="" style="font-size:13.0px">声音设计<em>2</em></span><span class="" style="font-size:13.0px">存在主义<em>2</em></span></div>
+  <div class="hotdiv reveal"></div>
+  <div class="tagwrap reveal">
+    <h3 class="sub-h" style="margin:0;min-width:150px">自建标签</h3>
+    <div class="cloud" id="tagcloud"><b style="font-size:27.0px">爱情<em>10</em></b><b style="font-size:21.4px">动画片<em>6</em></b><b style="font-size:21.4px">FilmNoir<em>6</em></b><b style="font-size:20.0px">金棕榈/戛纳最高奖<em>5</em></b><b style="font-size:18.6px">奥斯卡BP<em>4</em></b><b style="font-size:17.2px">金熊<em>3</em></b><b style="font-size:17.2px">元电影<em>3</em></b><b style="font-size:15.8px">Neo-noir<em>2</em></b><b style="font-size:15.8px">院线观影<em>2</em></b><b style="font-size:14.4px">DCU<em>1</em></b><b style="font-size:14.4px">歌舞片<em>1</em></b><b style="font-size:14.4px">吸血鬼<em>1</em></b><b style="font-size:14.4px">MCU<em>1</em></b><b style="font-size:14.4px">金狮<em>1</em></b></div>
+  </div>
+</section>
+
+<!-- 06 时间 -->
+<section id="s06">
+  <div class="sec-head reveal">
+    <div class="sec-idx">06</div>
+    <div class="sec-titles"><h2>观影节律</h2><p>When, and How Often</p></div>
+    <div class="sec-aside">6 月 41 部、7 月 27 部，是全年最密的两个月。零点到五点是真正的黄金档，占 35.6%。</div>
+  </div>
+  <h3 class="sub-h reveal">逐月 · 时间曲线</h3>
+  <div class="chart reveal">
+    <div class="bars" id="bars">
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:19.5%"><span class="cap">8</span></div></div>
+    <div class="mo">01</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:31.7%"><span class="cap">13</span></div></div>
+    <div class="mo">02</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:19.5%"><span class="cap">8</span></div></div>
+    <div class="mo">03</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:17.1%"><span class="cap">7</span></div></div>
+    <div class="mo">04</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:7.3%"><span class="cap">3</span></div></div>
+    <div class="mo">05</div>
+  </div>
+  <div class="bar peak">
+    <div class="track"><div class="fill" style="height:100.0%"><span class="cap">41</span></div></div>
+    <div class="mo">06</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:65.9%"><span class="cap">27</span></div></div>
+    <div class="mo">07</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:17.1%"><span class="cap">7</span></div></div>
+    <div class="mo">08</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:9.8%"><span class="cap">4</span></div></div>
+    <div class="mo">09</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:19.5%"><span class="cap">8</span></div></div>
+    <div class="mo">10</div>
+  </div>
+  <div class="bar ">
+    <div class="track"><div class="fill" style="height:22.0%"><span class="cap">9</span></div></div>
+    <div class="mo">11</div>
+  </div></div>
+    <div class="chart-legend"><span>柱高 = 当月观影数</span></div>
+    <p class="chart-sum">全年 135 部摊在 12 个月里：6 月一口气 41 部，占了三成，是全年最密的一个月；7 月 27 部次之，2 月 13 部第三。</p>
+  </div>
+  <h3 class="sub-h reveal" style="margin-top:72px">深夜放映员 · 24 小时</h3>
+  <div class="reveal">
+    <div class="hours" id="hours">
+  <div class="hour late"><b>18</b><i style="height:100.0%"></i></div>
+  <div class="hour late"><b>7</b><i style="height:38.9%"></i></div>
+  <div class="hour late"><b>11</b><i style="height:61.1%"></i></div>
+  <div class="hour late"><b>11</b><i style="height:61.1%"></i></div>
+  <div class="hour late"><b>1</b><i style="height:5.6%"></i></div>
+  <div class="hour "><b>2</b><i style="height:11.1%"></i></div>
+  <div class="hour "><b>1</b><i style="height:5.6%"></i></div>
+  <div class="hour "><b>2</b><i style="height:11.1%"></i></div>
+  <div class="hour "><b>2</b><i style="height:11.1%"></i></div>
+  <div class="hour "><b>6</b><i style="height:33.3%"></i></div>
+  <div class="hour "><b>4</b><i style="height:22.2%"></i></div>
+  <div class="hour "><b>4</b><i style="height:22.2%"></i></div>
+  <div class="hour "><b>2</b><i style="height:11.1%"></i></div>
+  <div class="hour "><b>3</b><i style="height:16.7%"></i></div>
+  <div class="hour "><b>8</b><i style="height:44.4%"></i></div>
+  <div class="hour "><b>4</b><i style="height:22.2%"></i></div>
+  <div class="hour "><b>3</b><i style="height:16.7%"></i></div>
+  <div class="hour "><b>9</b><i style="height:50.0%"></i></div>
+  <div class="hour "><b>2</b><i style="height:11.1%"></i></div>
+  <div class="hour "><b>4</b><i style="height:22.2%"></i></div>
+  <div class="hour "><b>1</b><i style="height:5.6%"></i></div>
+  <div class="hour "><b>14</b><i style="height:77.8%"></i></div>
+  <div class="hour "><b>9</b><i style="height:50.0%"></i></div>
+  <div class="hour "><b>7</b><i style="height:38.9%"></i></div></div>
+    <div class="hour-axis" id="hourAxis"><span>00</span><span></span><span></span><span>03</span><span></span><span></span><span>06</span><span></span><span></span><span>09</span><span></span><span></span><span>12</span><span></span><span></span><span>15</span><span></span><span></span><span>18</span><span></span><span></span><span>21</span><span></span><span></span></div>
+  </div>
+  <div class="facts" id="hourFacts"><div class="fact reveal" style="--d:0s"><h4>Peak</h4><p>零点档 <b>18</b> 场，是全天最密的一小时</p></div><div class="fact reveal" style="--d:0.07s"><h4>Late</h4><p>0—5 点合计 <b>48</b> 场，占全部 35.6%</p></div><div class="fact reveal" style="--d:0.14s"><h4>Daytime</h4><p>9—18 点 <b>43</b> 场，白天基本不碰电影</p></div></div>
+  <h3 class="sub-h reveal" style="margin-top:72px">年代分布 · 每十年一档</h3>
+  <div class="decades reveal" id="decades">
+  <div class="dec ">
+    <div class="track"><i style="height:47.5%"><span class="n">19</span></i></div>
+    <em>≤1960</em>
+  </div>
+  <div class="dec ">
+    <div class="track"><i style="height:2.5%"><span class="n">1</span></i></div>
+    <em>1960s</em>
+  </div>
+  <div class="dec ">
+    <div class="track"><i style="height:1.2%"><span class="n">0</span></i></div>
+    <em>1970s</em>
+  </div>
+  <div class="dec ">
+    <div class="track"><i style="height:7.5%"><span class="n">3</span></i></div>
+    <em>1980s</em>
+  </div>
+  <div class="dec ">
+    <div class="track"><i style="height:22.5%"><span class="n">9</span></i></div>
+    <em>1990s</em>
+  </div>
+  <div class="dec big">
+    <div class="track"><i style="height:55.0%"><span class="n">22</span></i></div>
+    <em>2000s</em>
+  </div>
+  <div class="dec big">
+    <div class="track"><i style="height:50.0%"><span class="n">20</span></i></div>
+    <em>2010s</em>
+  </div>
+  <div class="dec big">
+    <div class="track"><i style="height:100.0%"><span class="n">40</span></i></div>
+    <em>2020–25</em>
+  </div>
+  <div class="dec big">
+    <div class="track"><i style="height:52.5%"><span class="n">21</span></i></div>
+    <em>2026</em>
+  </div></div>
+  <div class="facts" id="decadeFacts"><div class="fact reveal" style="--d:0s"><h4>Oldest</h4><p>最老的一部是 <b>1935</b> 年的片子</p></div><div class="fact reveal" style="--d:0.07s"><h4>Peak</h4><p><b>2020–25</b> 最多，共 40 部</p></div><div class="fact reveal" style="--d:0.14s"><h4>Age</h4><p>平均片龄 <b>20.0</b> 年</p></div></div>
+</section>
+
+<!-- 07 2026 新片专题 -->
+<section id="s07">
+  <div class="stage" id="stage">
+    <div class="stage-dock"><b id="dockN">21</b><span>部 2026 新片 · 年度专题</span></div>
+    <div class="stage-sticky">
+      <p class="stage-eyebrow">SPECIAL REPORT · 2026 IN CINEMA</p>
+      <div class="stage-num"><b id="stageBig">0</b><em>部 2026 新片</em></div>
+      <p class="stage-cap">2026 年上映、我今年就看了的新片</p>
+    </div>
+  </div>
+  <div class="y26-body">
+    <div class="y26-kpis reveal" id="y26kpis">
+  <div class="y"><div class="k">新片数量</div><div class="v">21<small>部</small></div><div class="d">占全年 15.6%</div></div>
+  <div class="y"><div class="k">我的均分</div><div class="v">3.33<small>/ 5</small></div><div class="d">老片 3.80，新片低 0.47</div></div>
+  <div class="y"><div class="k">五星部数</div><div class="v">5<small>部</small></div><div class="d">占新片 24%</div></div></div>
+    <h3 class="sub-h reveal" style="margin-top:60px">三大电影节 · 入选统计</h3>
+    <div class="fest-grid reveal" id="festGrid"><div class="fest">
+    <span class="fidx">Feb</span>
+    <div class="fh"><h4>柏林电影节</h4>
+      <div class="tot"><span class="tbd">—</span></div></div>
+    <div class="fsub">BERLINALE</div>
+    <div class="frow"><span>主竞赛单元</span><b><span class="tbd">—</span></b></div><div class="frow"><span>全景单元</span><b><span class="tbd">—</span></b></div>
+    <div class="frow" style="border:0;padding-top:14px">
+      <span class="tbd-tag">年末补录</span><span></span></div>
+  </div><div class="fest">
+    <span class="fidx">May</span>
+    <div class="fh"><h4>戛纳电影节</h4>
+      <div class="tot"><span class="tbd">—</span></div></div>
+    <div class="fsub">CANNES</div>
+    <div class="frow"><span>主竞赛单元</span><b><span class="tbd">—</span></b></div><div class="frow"><span>导演双周</span><b><span class="tbd">—</span></b></div><div class="frow"><span>影评人周</span><b><span class="tbd">—</span></b></div>
+    <div class="frow" style="border:0;padding-top:14px">
+      <span class="tbd-tag">年末补录</span><span></span></div>
+  </div><div class="fest">
+    <span class="fidx">Sep</span>
+    <div class="fh"><h4>威尼斯电影节</h4>
+      <div class="tot"><span class="tbd">—</span></div></div>
+    <div class="fsub">VENEZIA</div>
+    <div class="frow"><span>主竞赛单元</span><b><span class="tbd">—</span></b></div>
+    <div class="frow" style="border:0;padding-top:14px">
+      <span class="tbd-tag">年末补录</span><span></span></div>
+  </div></div>
+    <p class="foot-note reveal">※ 电影节数字待年末补录：<code>CONFIG.festivals</code> 里改 total / v 即可，页面会自动去掉「待补」标记。</p>
+    <div class="two-col reveal" style="margin-top:64px">
+      <div>
+        <h3 class="sub-h">新片观影时间分布</h3>
+        <div class="mini" id="miniM">
+  <div class="mb"><div class="t"><i style="height:0%"><b></b></i></div><em>1</em></div>
+  <div class="mb"><div class="t"><i style="height:0%"><b></b></i></div><em>2</em></div>
+  <div class="mb"><div class="t"><i style="height:0%"><b></b></i></div><em>3</em></div>
+  <div class="mb"><div class="t"><i style="height:20%"><b>1</b></i></div><em>4</em></div>
+  <div class="mb"><div class="t"><i style="height:0%"><b></b></i></div><em>5</em></div>
+  <div class="mb"><div class="t"><i style="height:80%"><b>4</b></i></div><em>6</em></div>
+  <div class="mb"><div class="t"><i style="height:60%"><b>3</b></i></div><em>7</em></div>
+  <div class="mb"><div class="t"><i style="height:40%"><b>2</b></i></div><em>8</em></div>
+  <div class="mb"><div class="t"><i style="height:40%"><b>2</b></i></div><em>9</em></div>
+  <div class="mb"><div class="t"><i style="height:100%"><b>5</b></i></div><em>10</em></div>
+  <div class="mb"><div class="t"><i style="height:80%"><b>4</b></i></div><em>11</em></div>
+  <div class="mb"><div class="t"><i style="height:0%"><b></b></i></div><em>12</em></div></div>
+      </div>
+      <div>
+        <h3 class="sub-h">新片 vs 老片 · 我的均分</h3>
+        <div class="cmp2" id="cmp26">
+  <div class="c new"><div class="k">2026 新片</div><div class="v">3.33<small> / 5</small></div>
+    <div class="meter"><i style="width:67%"></i></div></div>
+  <div class="c"><div class="k">往年老片</div><div class="v">3.80<small> / 5</small></div>
+    <div class="meter"><i style="width:76%"></i></div></div></div>
+      </div>
+    </div>
+    <h3 class="sub-h reveal" style="margin-top:60px">21 部新片清单</h3>
+    <div class="chips reveal" id="y26list" style="gap:8px">
+  <span class="chip " title="提莫·贝克曼贝托夫">极限审判 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★</em></span>
+  <span class="chip " title="张艺谋">惊蛰无声 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★</em></span>
+  <span class="chip " title="韩延">星河入梦 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★</em></span>
+  <span class="chip " title="林汇达">熊出没·年年有熊 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★</em></span>
+  <span class="chip " title="蓝鸿春">给阿嬷的情书 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★</em></span>
+  <span class="chip " title="伊尔凯尔·恰塔克">告知信 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★</em></span>
+  <span class="chip s5" title="佩德罗·阿莫多瓦">苦涩的圣诞节 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★★</em></span>
+  <span class="chip s5" title="洪常秀">她回来的那天 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★★</em></span>
+  <span class="chip s5" title="拉杜·裘德">女仆日记 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★★</em></span>
+  <span class="chip " title="文牧野">欢迎来龙餐馆 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★</em></span>
+  <span class="chip s5" title="马库斯·施莱泽">罗斯 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★★</em></span>
+  <span class="chip " title="董润年">年会不能停！2 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★</em></span>
+  <span class="chip " title="罗泓轸">希望 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★</em></span>
+  <span class="chip " title="滨口龙介">突如其来 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★</em></span>
+  <span class="chip " title="哈维尔·安布罗希">黑球 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★</em></span>
+  <span class="chip " title="是枝裕和">盒子里的羊 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★</em></span>
+  <span class="chip " title="玛丽恩·阿特兰">行走之人 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★</em></span>
+  <span class="chip s5" title="李沧东">可能的爱 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★★</em></span>
+  <span class="chip " title="桑德拉·沃纳尔">每时每刻 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★★</em></span>
+  <span class="chip " title="兰斯·奥本海姆">黄金时段 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★</em></span>
+  <span class="chip " title="卢卡斯·德霍特">懦夫 <em style="font-style:normal;color:var(--dim-2);font-size:9px">★★★</em></span></div>
+  </div>
+</section>
+
+<!-- 08 年度五佳 -->
+<section id="s08">
+  <div class="sec-head reveal">
+    <div class="sec-idx">08</div>
+    <div class="sec-titles"><h2>年度五佳</h2><p>Top 5 of the Year</p></div>
+    <div class="sec-aside">第一名已经定下：《可能的爱》。其余四席年末公布，现在先按 5 星的 2026 新片占位。</div>
+  </div>
+  <div id="top5wrap">
+  <div class="p1 reveal">
+    <div class="poster" data-name="可能的爱">
+    <div class="art" style="--h:171">
+      <span class="ay">2026</span>
+      <span class="ac"></span>
+      <span class="pt">可能的爱</span>
+      <span class="ln"></span>
+      <span class="py">李沧东 · 2026</span>
+    </div>
+    <img alt="">
+  </div>
+    <div class="pinfo">
+      <div class="rank">NO.01 · 年度最佳</div>
+      <h3>可能的爱</h3>
+      <div class="sub">李沧东 导演 ／ 2026</div>
+      <div class="credits">
+        <span>主演 <b>全度妍/薛景求/赵寅成</b></span>
+        <span>片长 <b><span class="tbd">—</span></b></span>
+        <span>豆瓣 <b>8.6</b></span>
+      </div>
+      <div class="stars">★★★★★<span></span></div>
+      <div class="quote">「爱死李沧东！预定我的年度最佳。完美的元电影，把「共情」本身也拍成了表演。」</div>
+    </div>
+  </div>
+  <div class="t5-row" id="t5row">
+  <article class="pcard reveal">
+    <div class="poster" data-name="苦涩的圣诞节">
+    <div class="art" style="--h:326">
+      <span class="ay">2026</span>
+      <span class="ac"></span>
+      <span class="pt">苦涩的圣诞节</span>
+      <span class="ln"></span>
+      <span class="py">佩德罗·阿莫多瓦 · 2026</span>
+    </div>
+    <img alt="">
+  </div>
+    <div class="rk">NO.02 · 暂定</div>
+    <h4>苦涩的圣诞节</h4>
+    <div class="cr"><span>佩德罗·阿莫多瓦 导演</span><span>巴巴拉·莱涅/莱昂纳多·斯巴拉格利亚/艾塔娜·桑切斯-希洪</span></div>
+    <div class="stars">★★★★★<span></span></div>
+  </article>
+  <article class="pcard reveal">
+    <div class="poster" data-name="她回来的那天">
+    <div class="art" style="--h:314">
+      <span class="ay">2026</span>
+      <span class="ac"></span>
+      <span class="pt">她回来的那天</span>
+      <span class="ln"></span>
+      <span class="py">洪常秀 · 2026</span>
+    </div>
+    <img alt="">
+  </div>
+    <div class="rk">NO.03 · 暂定</div>
+    <h4>她回来的那天</h4>
+    <div class="cr"><span>洪常秀 导演</span><span>宋宣美/赵伦嬉/朴美素</span></div>
+    <div class="stars">★★★★★<span></span></div>
+  </article>
+  <article class="pcard reveal">
+    <div class="poster" data-name="女仆日记">
+    <div class="art" style="--h:150">
+      <span class="ay">2026</span>
+      <span class="ac"></span>
+      <span class="pt">女仆日记</span>
+      <span class="ln"></span>
+      <span class="py">拉杜·裘德 · 2026</span>
+    </div>
+    <img alt="">
+  </div>
+    <div class="rk">NO.04 · 暂定</div>
+    <h4>女仆日记</h4>
+    <div class="cr"><span>拉杜·裘德 导演</span><span>安娜·杜米特拉斯库/梅兰尼·蒂埃里/樊尚·马凯涅</span></div>
+    <div class="stars">★★★★★<span></span></div>
+  </article>
+  <article class="pcard reveal">
+    <div class="poster" data-name="罗斯">
+    <div class="art" style="--h:160">
+      <span class="ay">2026</span>
+      <span class="ac"></span>
+      <span class="pt">罗斯</span>
+      <span class="ln"></span>
+      <span class="py">马库斯·施莱泽 · 2026</span>
+    </div>
+    <img alt="">
+  </div>
+    <div class="rk">NO.05 · 暂定</div>
+    <h4>罗斯</h4>
+    <div class="cr"><span>马库斯·施莱泽 导演</span><span>桑德拉·惠勒/卡洛·布劳恩/玛丽莎·格罗瓦尔德</span></div>
+    <div class="stars">★★★★★<span></span></div>
+  </article></div></div>
+  <p class="foot-note reveal" id="posterNote">※ 海报位置已留好：把图片命名为 <code>《片名》海报.jpg</code>（也支持 png / webp），放进 <code>海报/</code> 文件夹即可自动替换；找不到图片时显示排版好的占位封面。</p>
+</section>
+
+</main>
+
+<footer>
+  <div class="fyear">2026</div>
+  <p class="fq">「看过的电影未必都记得，<br>但它们确实把这一年撑住了。」<br><b>——写给这一年的 135 次关灯</b></p>
+  <p class="src" id="footerSrc">2026.Douban286590474.xlsx<br>
+  报告制作：胡嘉祺、DeepSeek-V4.1-Flash-1017</p>
+  <p class="lkey">电脑端按 L 键可关灯，再按一次即亮起</p>
+  <p class="copy" id="footerCopy">© 2026 胡嘉祺</p>
+  <a class="top-link" href="https://hjqsculptingintime.github.io/Annual-movie-report/2026/2026.MovieReview.html#s00">BACK TO TOP</a>
+</footer>
+
+<div class="tip" id="tip"></div>
+
+
+
+<script>
+/* ================= 2026 观影报告 · v2 ================= */
+const DATA = {"meta":{"year":2026,"n":135,"tv":6,"shorts":2,"first":"2026-01-02","last":"2026-11-15","activeDays":100,"chars":36564,"avgChars":270.8,"rated":135,"avgMine":3.73,"avgDb":7.85,"five":47,"one":9,"fiveRate":34.8,"late":48,"lateShare":35.6,"avgFilmYear":2006.0,"oldest":1935,"n26":21,"n26Rate":15.6,"avg26":3.33,"avgOld":3.8},"hours":[18,7,11,11,1,2,1,2,2,6,4,4,2,3,8,4,3,9,2,4,1,14,9,7],"ratings":[{"s":5,"n":47},{"s":4,"n":37},{"s":3,"n":27},{"s":2,"n":15},{"s":1,"n":9}],"countries":[{"name":"美国","n":39},{"name":"中国大陆","n":22},{"name":"法国","n":16},{"name":"中国香港","n":11},{"name":"英国","n":10},{"name":"韩国","n":10},{"name":"匈牙利","n":3},{"name":"西班牙","n":3},{"name":"比利时","n":3},{"name":"中国台湾","n":3},{"name":"挪威","n":2},{"name":"苏联","n":2},{"name":"罗马尼亚","n":2},{"name":"德国","n":2},{"name":"奥地利","n":2},{"name":"意大利","n":1},{"name":"伊朗","n":1},{"name":"拉脱维亚","n":1},{"name":"伊拉克","n":1},{"name":"日本","n":1}],"continents":[{"name":"亚洲","n":49,"pct":36.3},{"name":"欧洲","n":47,"pct":34.8},{"name":"北美","n":39,"pct":28.9}],"decades":[{"name":"≤1960","n":19},{"name":"1960s","n":1},{"name":"1970s","n":0},{"name":"1980s","n":3},{"name":"1990s","n":9},{"name":"2000s","n":22},{"name":"2010s","n":20},{"name":"2020–25","n":40},{"name":"2026","n":21}],"directors":[{"name":"阿尔弗雷德·希区柯克","region":"英国 / 美国","count":6,"avg":3.8,"films":[{"t":"西北偏北","y":"1959","r":5,"db":8.3,"d":"2026-06-02"},{"t":"贵妇失踪记","y":"1938","r":5,"db":8.1,"d":"2026-06-21"},{"t":"史密斯夫妇","y":"1941","r":2,"db":6.8,"d":"2026-06-21"},{"t":"三十九级台阶","y":"1935","r":3,"db":7.7,"d":"2026-06-21"},{"t":"电话谋杀案","y":"1954","r":4,"db":8.9,"d":"2026-10-11"},{"t":"火车怪客","y":"1951","r":4,"db":8.1,"d":"2026-11-13"}]},{"name":"比利·怀尔德","region":"奥匈帝国 / 美国","count":4,"avg":4.5,"films":[{"t":"桃色公寓","y":"1960","r":5,"db":8.9,"d":"2026-04-13"},{"t":"热情如火","y":"1959","r":3,"db":8.9,"d":"2026-06-23"},{"t":"双重赔偿","y":"1944","r":5,"db":8.5,"d":"2026-06-25"},{"t":"倒扣的王牌","y":"1951","r":5,"db":8.7,"d":"2026-06-26"}]},{"name":"弗朗索瓦·欧容","region":"法国","count":4,"avg":4.5,"films":[{"t":"秋日何时来","y":"2024","r":4,"db":8.1,"d":"2026-07-15"},{"t":"泳池情杀案","y":"2003","r":5,"db":7.4,"d":"2026-07-15"},{"t":"登堂入室","y":"2012","r":5,"db":8.5,"d":"2026-07-16"},{"t":"八美图","y":"2002","r":4,"db":7.7,"d":"2026-10-14"}]},{"name":"丹尼斯·维伦纽瓦","region":"加拿大","count":4,"avg":4.0,"films":[{"t":"降临","y":"2016","r":3,"db":7.8,"d":"2026-06-18"},{"t":"银翼杀手2049","y":"2017","r":5,"db":8.3,"d":"2026-08-16"},{"t":"沙丘","y":"2021","r":4,"db":7.7,"d":"2026-08-20"},{"t":"沙丘2","y":"2024","r":4,"db":8.1,"d":"2026-08-24"}]},{"name":"王家卫","region":"中国香港","count":3,"avg":5.0,"films":[{"t":"春光乍泄","y":"1997","r":5,"db":9.0,"d":"2026-01-02"},{"t":"重庆森林","y":"1994","r":5,"db":8.8,"d":"2026-06-10"},{"t":"堕落天使","y":"1995","r":5,"db":8.3,"d":"2026-07-17"}]},{"name":"伊尔蒂科·茵叶蒂","region":"匈牙利","count":3,"avg":4.3,"films":[{"t":"肉与灵","y":"2017","r":5,"db":7.6,"d":"2026-05-01"},{"t":"吾妻之话","y":"2021","r":3,"db":6.5,"d":"2026-07-13"},{"t":"寂静的朋友","y":"2025","r":5,"db":7.8,"d":"2026-07-26"}]},{"name":"朴赞郁","region":"韩国","count":3,"avg":4.0,"films":[{"t":"分手的决心","y":"2022","r":5,"db":7.6,"d":"2026-06-10"},{"t":"蝙蝠","y":"2009","r":4,"db":7.5,"d":"2026-06-21"},{"t":"亲切的金子","y":"2005","r":3,"db":7.6,"d":"2026-06-24"}]},{"name":"卢卡斯·德霍特","region":"比利时","count":3,"avg":3.7,"films":[{"t":"亲密","y":"2022","r":4,"db":8.1,"d":"2026-06-17"},{"t":"女孩","y":"2018","r":4,"db":8.1,"d":"2026-06-18"},{"t":"懦夫","y":"2026","r":3,"db":7.5,"d":"2026-11-15"}]},{"name":"张艺谋","region":"中国大陆","count":3,"avg":1.3,"films":[{"t":"第二十条","y":"2024","r":1,"db":7.5,"d":"2026-01-23"},{"t":"悬崖之上","y":"2021","r":2,"db":7.3,"d":"2026-03-22"},{"t":"惊蛰无声","y":"2026","r":1,"db":5.7,"d":"2026-06-02"}]}],"series":[{"name":"哈利·波特","total":8,"n":6,"lastYear":2,"done":true,"avg":3.7,"films":[{"t":"哈利·波特与阿兹卡班的囚徒","y":"2004","r":5,"d":"2026-02-21"},{"t":"哈利·波特与火焰杯","y":"2005","r":3,"d":"2026-02-23"},{"t":"哈利·波特与凤凰社","y":"2007","r":4,"d":"2026-02-23"},{"t":"哈利·波特与混血王子","y":"2009","r":2,"d":"2026-02-24"},{"t":"哈利·波特与死亡圣器(上)","y":"2010","r":4,"d":"2026-03-21"},{"t":"哈利·波特与死亡圣器(下)","y":"2011","r":4,"d":"2026-03-21"}]},{"name":"黑客帝国","total":4,"n":4,"lastYear":0,"done":true,"avg":4.2,"films":[{"t":"黑客帝国","y":"1999","r":5,"d":"2026-01-12"},{"t":"黑客帝国2：重装上阵","y":"2003","r":5,"d":"2026-01-17"},{"t":"黑客帝国3：矩阵革命","y":"2003","r":4,"d":"2026-01-25"},{"t":"黑客帝国：矩阵重启","y":"2021","r":3,"d":"2026-08-21"}]},{"name":"无间道","total":3,"n":3,"lastYear":0,"done":true,"avg":4.7,"films":[{"t":"无间道","y":"2002","r":5,"d":"2026-02-12"},{"t":"无间道2","y":"2003","r":5,"d":"2026-02-18"},{"t":"无间道3：终极无间","y":"2003","r":4,"d":"2026-06-02"}]},{"name":"沙丘","total":3,"n":2,"lastYear":0,"done":false,"avg":4.0,"films":[{"t":"沙丘","y":"2021","r":4,"d":"2026-08-20"},{"t":"沙丘2","y":"2024","r":4,"d":"2026-08-24"}]},{"name":"银翼杀手","total":2,"n":2,"lastYear":0,"done":true,"avg":5.0,"films":[{"t":"银翼杀手","y":"1982","r":5,"d":"2026-08-05"},{"t":"银翼杀手2049","y":"2017","r":5,"d":"2026-08-16"}]},{"name":"蓝白红三部曲","total":3,"n":1,"lastYear":0,"done":false,"avg":4.0,"films":[{"t":"蓝白红三部曲之白","y":"1994","r":4,"d":"2026-09-06"}]}],"f26":[{"t":"极限审判","dir":"提莫·贝克曼贝托夫","cast":"克里斯·帕拉特/丽贝卡·弗格森/卡莉·瑞斯","month":4,"date":"2026-04-05","r":2,"db":7.2,"tags":""},{"t":"惊蛰无声","dir":"张艺谋","cast":"易烊千玺/朱一龙/宋佳","month":6,"date":"2026-06-02","r":1,"db":5.7,"tags":""},{"t":"星河入梦","dir":"韩延","cast":"王鹤棣/宋茜/祖峰","month":6,"date":"2026-06-02","r":1,"db":6.7,"tags":""},{"t":"熊出没·年年有熊","dir":"林汇达","cast":"","month":6,"date":"2026-06-02","r":2,"db":6.4,"tags":"动画片"},{"t":"给阿嬷的情书","dir":"蓝鸿春","cast":"李思潼/王彦桐/吴少卿","month":6,"date":"2026-06-21","r":3,"db":9.3,"tags":"院线观影"},{"t":"告知信","dir":"伊尔凯尔·恰塔克","cast":"优素福·阿昆/埃姆雷·巴卡尔/坦苏·比切尔","month":7,"date":"2026-07-11","r":4,"db":6.9,"tags":"金熊"},{"t":"苦涩的圣诞节","dir":"佩德罗·阿莫多瓦","cast":"巴巴拉·莱涅/莱昂纳多·斯巴拉格利亚/艾塔娜·桑切斯-希洪","month":7,"date":"2026-07-12","r":5,"db":6.7,"tags":"元电影"},{"t":"她回来的那天","dir":"洪常秀","cast":"宋宣美/赵伦嬉/朴美素","month":7,"date":"2026-07-12","r":5,"db":7.4,"tags":""},{"t":"女仆日记","dir":"拉杜·裘德","cast":"安娜·杜米特拉斯库/梅兰尼·蒂埃里/樊尚·马凯涅","month":8,"date":"2026-08-18","r":5,"db":7.3,"tags":""},{"t":"欢迎来龙餐馆","dir":"文牧野","cast":"沈腾/蒋奇明/奥马尔·谢里夫","month":8,"date":"2026-08-20","r":4,"db":8.7,"tags":"院线观影"},{"t":"罗斯","dir":"马库斯·施莱泽","cast":"桑德拉·惠勒/卡洛·布劳恩/玛丽莎·格罗瓦尔德","month":9,"date":"2026-09-21","r":5,"db":8.5,"tags":""},{"t":"年会不能停！2","dir":"董润年","cast":"张若昀/白客/高叶","month":9,"date":"2026-09-24","r":2,"db":6.2,"tags":""},{"t":"希望","dir":"罗泓轸","cast":"黄政民/赵寅成/郑好娟","month":10,"date":"2026-10-18","r":4,"db":5.5,"tags":""},{"t":"突如其来","dir":"滨口龙介","cast":"维尔日妮·埃菲拉/冈本多绪/长塚京三","month":10,"date":"2026-10-24","r":4,"db":7.7,"tags":""},{"t":"黑球","dir":"哈维尔·安布罗希","cast":"吉塔里卡·德拉富恩特/米格尔·贝尔纳尔德阿尤/米洛·基菲斯","month":10,"date":"2026-10-30","r":4,"db":8.7,"tags":""},{"t":"盒子里的羊","dir":"是枝裕和","cast":"绫濑遥/大悟/桑木里梦","month":10,"date":"2026-10-30","r":2,"db":5.8,"tags":""},{"t":"行走之人","dir":"玛丽恩·阿特兰","cast":"科拉·奎尼亚/苏珊·热朗/米提亚·卡佩利耶-欧达","month":10,"date":"2026-10-31","r":3,"db":null,"tags":""},{"t":"可能的爱","dir":"李沧东","cast":"全度妍/薛景求/赵寅成","month":11,"date":"2026-11-07","r":5,"db":8.6,"tags":"元电影"},{"t":"每时每刻","dir":"桑德拉·沃纳尔","cast":"比吉特·米尼希迈尔/洛特·希林·凯林/特里斯坦·洛佩斯","month":11,"date":"2026-11-11","r":4,"db":7.4,"tags":""},{"t":"黄金时段","dir":"兰斯·奥本海姆","cast":"罗伯特·帕丁森/梅里特·韦弗/斯凯勒·吉桑多","month":11,"date":"2026-11-14","r":2,"db":6.2,"tags":""},{"t":"懦夫","dir":"卢卡斯·德霍特","cast":"伊曼纽尔·马基亚/瓦伦丁·坎帕涅/威廉·德·史瑞佛","month":11,"date":"2026-11-15","r":3,"db":7.5,"tags":""}],"months26":[{"m":1,"n":0},{"m":2,"n":0},{"m":3,"n":0},{"m":4,"n":1},{"m":5,"n":0},{"m":6,"n":4},{"m":7,"n":3},{"m":8,"n":2},{"m":9,"n":2},{"m":10,"n":5},{"m":11,"n":4},{"m":12,"n":0}],"months":[{"m":1,"n":8,"five":[{"t":"春光乍泄","y":"1997","dir":"王家卫"},{"t":"黑客帝国","y":"1999","dir":"莉莉·沃卓斯基"},{"t":"黑客帝国2：重装上阵","y":"2003","dir":"拉娜·沃卓斯基"},{"t":"性梦爱三部曲：梦","y":"2024","dir":"达格·约翰·豪格鲁德"}]},{"m":2,"n":13,"five":[{"t":"阮玲玉","y":"1991","dir":"关锦鹏"},{"t":"无间道","y":"2002","dir":"刘伟强"},{"t":"无间道2","y":"2003","dir":"刘伟强"},{"t":"甜蜜蜜","y":"1996","dir":"陈可辛"},{"t":"你逃我也逃","y":"1942","dir":"恩斯特·刘别谦"},{"t":"哈利·波特与阿兹卡班的囚徒","y":"2004","dir":"阿方索·卡隆"}]},{"m":3,"n":8,"five":[]},{"m":4,"n":7,"five":[{"t":"桃色公寓","y":"1960","dir":"比利·怀尔德"},{"t":"四百击","y":"1959","dir":"弗朗索瓦·特吕弗"},{"t":"小城之春","y":"1948","dir":"费穆"}]},{"m":5,"n":3,"five":[{"t":"肉与灵","y":"2017","dir":"伊尔蒂科·茵叶蒂"},{"t":"乡愁","y":"1983","dir":"安德烈·塔可夫斯基"},{"t":"偷自行车的人","y":"1948","dir":"维托里奥·德西卡"}]},{"m":6,"n":41,"five":[{"t":"西北偏北","y":"1959","dir":"阿尔弗雷德·希区柯克"},{"t":"机器人总动员","y":"2008","dir":"安德鲁·斯坦顿"},{"t":"重庆森林","y":"1994","dir":"王家卫"},{"t":"分手的决心","y":"2022","dir":"朴赞郁"},{"t":"四月三周两天","y":"2007","dir":"克里斯蒂安·蒙吉"},{"t":"阿诺拉","y":"2024","dir":"肖恩·贝克"},{"t":"无名","y":"2023","dir":"程耳"},{"t":"贵妇失踪记","y":"1938","dir":"阿尔弗雷德·希区柯克"},{"t":"何处是我朋友的家","y":"1987","dir":"阿巴斯·基亚罗斯塔米"},{"t":"双重赔偿","y":"1944","dir":"比利·怀尔德"},{"t":"倒扣的王牌","y":"1951","dir":"比利·怀尔德"},{"t":"杀手","y":"1956","dir":"斯坦利·库布里克"}]},{"m":7,"n":27,"five":[{"t":"地球最后的夜晚","y":"2018","dir":"毕赣"},{"t":"苦涩的圣诞节","y":"2026","dir":"佩德罗·阿莫多瓦"},{"t":"她回来的那天","y":"2026","dir":"洪常秀"},{"t":"巴黎夏日","y":"2025","dir":"瓦伦丁·卡迪奇"},{"t":"泳池情杀案","y":"2003","dir":"弗朗索瓦·欧容"},{"t":"登堂入室","y":"2012","dir":"弗朗索瓦·欧容"},{"t":"堕落天使","y":"1995","dir":"王家卫"},{"t":"猫猫的奇幻漂流","y":"2024","dir":"金兹·兹巴洛迪斯"},{"t":"寂静的朋友","y":"2025","dir":"伊尔蒂科·茵叶蒂"},{"t":"色，戒","y":"2007","dir":"李安"}]},{"m":8,"n":7,"five":[{"t":"银翼杀手","y":"1982","dir":"雷德利·斯科特"},{"t":"银翼杀手2049","y":"2017","dir":"丹尼斯·维伦纽瓦"},{"t":"女仆日记","y":"2026","dir":"拉杜·裘德"}]},{"m":9,"n":4,"five":[{"t":"燃烧","y":"2018","dir":"李沧东"},{"t":"罗斯","y":"2026","dir":"马库斯·施莱泽"}]},{"m":10,"n":8,"five":[{"t":"雁南飞","y":"1957","dir":"米哈伊尔·卡拉托佐夫"}]},{"m":11,"n":9,"five":[{"t":"第三人","y":"1949","dir":"卡罗尔·里德"},{"t":"可能的爱","y":"2026","dir":"李沧东"},{"t":"杀死比尔","y":"2003","dir":"昆汀·塔伦蒂诺"}]}],"tags":[{"name":"爱情","n":10},{"name":"动画片","n":6},{"name":"FilmNoir","n":6},{"name":"金棕榈/戛纳最高奖","n":5},{"name":"奥斯卡BP","n":4},{"name":"金熊","n":3},{"name":"元电影","n":3},{"name":"Neo-noir","n":2},{"name":"院线观影","n":2},{"name":"DCU","n":1},{"name":"歌舞片","n":1},{"name":"吸血鬼","n":1},{"name":"MCU","n":1},{"name":"金狮","n":1}],"hotwords":[{"w":"现实与虚构","n":23},{"w":"身份","n":16},{"w":"爱情","n":12},{"w":"长镜头","n":10},{"w":"女性","n":10},{"w":"调度","n":10},{"w":"历史","n":10},{"w":"身体","n":9},{"w":"政治","n":9},{"w":"凝视","n":8},{"w":"家庭","n":8},{"w":"孤独","n":7},{"w":"欲望","n":7},{"w":"留白","n":7},{"w":"死亡","n":7},{"w":"暴力","n":7},{"w":"光影","n":7},{"w":"创伤","n":6},{"w":"现实主义","n":6},{"w":"亲密","n":6},{"w":"时代","n":5},{"w":"阶级","n":5},{"w":"荒诞","n":5},{"w":"底层","n":5},{"w":"战争","n":5},{"w":"自由","n":5},{"w":"男性","n":5},{"w":"构图","n":5},{"w":"少年","n":4},{"w":"戏中戏","n":4},{"w":"手持","n":4},{"w":"特写","n":4},{"w":"救赎","n":4},{"w":"权力","n":4},{"w":"性别","n":4},{"w":"蒙太奇","n":4},{"w":"记忆","n":4},{"w":"宗教","n":4},{"w":"新浪潮","n":4},{"w":"青春","n":3},{"w":"类型片","n":3},{"w":"元电影","n":3},{"w":"表现主义","n":3},{"w":"父权","n":3},{"w":"宿命","n":3},{"w":"后现代","n":3},{"w":"景深","n":3},{"w":"视听语言","n":3},{"w":"信仰","n":3},{"w":"黑色电影","n":2},{"w":"非线性","n":2},{"w":"抽帧","n":2},{"w":"声音设计","n":2},{"w":"存在主义","n":2}]};
+/* ===== 年末只需要改这里：festivals(电影节数字) 与 top5(年度五佳) ===== */
+const CONFIG = {
+  "posterDir": "海报",
+  "posterExts": [
+    "jpg",
+    "jpeg",
+    "png",
+    "webp"
+  ],
+  "festivals": [
+    {
+      "name": "柏林",
+      "en": "BERLINALE",
+      "total": null,
+      "units": [
+        {
+          "n": "主竞赛单元",
+          "v": null
+        },
+        {
+          "n": "全景单元",
+          "v": null
+        }
+      ]
+    },
+    {
+      "name": "戛纳",
+      "en": "CANNES",
+      "total": null,
+      "units": [
+        {
+          "n": "主竞赛单元",
+          "v": null
+        },
+        {
+          "n": "导演双周",
+          "v": null
+        },
+        {
+          "n": "影评人周",
+          "v": null
+        }
+      ]
+    },
+    {
+      "name": "威尼斯",
+      "en": "VENEZIA",
+      "total": null,
+      "units": [
+        {
+          "n": "主竞赛单元",
+          "v": null
+        }
+      ]
+    }
+  ],
+  "top5": [
+    {
+      "t": "可能的爱",
+      "fixed": true,
+      "runtime": null,
+      "quote": "爱死李沧东！预定我的年度最佳。完美的元电影，把「共情」本身也拍成了表演。"
+    },
+    {
+      "t": "苦涩的圣诞节",
+      "fixed": false,
+      "runtime": null,
+      "quote": "三层嵌套的「元立方」，看得很开心。"
+    },
+    {
+      "t": "她回来的那天",
+      "fixed": false,
+      "runtime": null,
+      "quote": "三段采访加一场表演课，克制而冷静。"
+    },
+    {
+      "t": "女仆日记",
+      "fixed": false,
+      "runtime": null,
+      "quote": "日记体蒙太奇，把零碎的生活缝成一部电影。"
+    },
+    {
+      "t": "罗斯",
+      "fixed": false,
+      "runtime": null,
+      "quote": "桑德勒·惠勒的表演封神。"
+    }
+  ]
+};
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const fmt = n => Number(n).toLocaleString('en-US');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const val = v => (v === null || v === undefined || v === '' ? '<span class="tbd">—</span>' : v);
+
+/* ---------- reveal ---------- */
+const io = new IntersectionObserver((es) => {
+  es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+}, { threshold: 0.08, rootMargin: '0px 0px -6% 0px' });
+const watch = el => { if (el) io.observe(el); };
+const watchAll = (root = document) => $$('.reveal', root).forEach(watch);
+
+/* ---------- count up ---------- */
+function countUp(el, to, dur = 1500) {
+  const t0 = performance.now();
+  let done = false;
+  const finish = () => { el.textContent = fmt(to); done = true; };
+  const step = (t) => {
+    if (done) return;
+    const p = Math.min(1, Math.max(0, (t - t0) / dur));
+    el.textContent = fmt(Math.round(to * (1 - Math.pow(1 - p, 3))));
+    if (p < 1) requestAnimationFrame(step); else finish();
+  };
+  requestAnimationFrame(step);
+  setTimeout(() => { if (!done) finish(); }, dur + 600);
+}
+
+const M = DATA.meta;
+
+/* ---------- 封面 ---------- */
+$('#tvN').textContent = M.tv;
+$('#shN').textContent = M.shorts;
+$('#coverSub').innerHTML = `<b>${M.first.slice(5).replace('-', '.')}</b> — <b>${M.last.slice(5).replace('-', '.')}</b> ／ ${M.activeDays} 天观影 ／ ${fmt(M.chars)} 字短评`;
+setTimeout(() => countUp($('#coverN'), M.n, 1700), 240);
+
+/* ---------- 01 评分 ---------- */
+$('#avgMine').innerHTML = `${M.avgMine.toFixed(2)}<span>/ 5</span>`;
+$('#avgMine10').textContent = (M.avgMine * 2).toFixed(2);
+$('#avgDb').textContent = M.avgDb.toFixed(2);
+$('#totalChars').innerHTML = `${fmt(M.chars)}<span>字</span>`;
+$('#avgChars').textContent = Math.round(M.avgChars);
+
+const SCOL = { 5: '#e0b062', 4: '#c08a4a', 3: '#8a7a63', 2: '#6b6157', 1: '#a8483c' };
+const rmax = Math.max(...DATA.ratings.map(r => r.n));
+$('#starbars').innerHTML = DATA.ratings.map(r => {
+  const c = SCOL[r.s];
+  return `<div class="sbar ${r.s === 5 ? 'on' : ''}">
+    <div class="track"><i style="height:${(r.n / rmax * 100).toFixed(1)}%;background:linear-gradient(180deg,${c},${c}26)">
+      <span class="n">${r.n}</span></i></div>
+    <div class="lb">${'★'.repeat(r.s)}</div>
+    <div class="pc">${(r.n / M.rated * 100).toFixed(1)}%</div>
+  </div>`;
+}).join('');
+
+
+$('#rateFacts').innerHTML = [
+  ['五星率', `<b>${M.fiveRate}%</b>，${M.five} 部满分；一星只有 ${M.one} 部`],
+  ['打分习惯', `135 部全部打分，没有一部留白`],
+  ['与豆瓣', `同批片豆瓣均分 <b>${M.avgDb.toFixed(2)}</b>，我低约 0.20 分`],
+].map(([h, p], i) => `<div class="fact reveal" style="--d:${i * .07}s"><h4>${h}</h4><p>${p}</p></div>`).join('');
+
+/* ---------- 02 导演 ---------- */
+$('#dgrid').innerHTML = DATA.directors.map((d, i) => `
+  <article class="dcard reveal" style="--d:${(i % 3) * .06}s">
+    <div class="dh"><h3>${esc(d.name)}</h3><span class="cnt">${d.count} 部</span></div>
+    <div class="reg">${esc(d.region)}导演</div>
+    <div class="avg"><b>${d.avg === null ? '—' : d.avg.toFixed(1)}</b><span>/ 5</span>
+      <span class="abar"><i style="width:${((d.avg || 0) / 5 * 100).toFixed(0)}%"></i></span></div>
+    <div class="chips">${d.films.map(f => `<span class="chip ${f.r === 5 ? 's5' : ''}">${esc(f.t)}</span>`).join('')}</div>
+  </article>`).join('');
+
+/* ---------- 03 出品地 ---------- */
+const CS = DATA.countries;
+const CCOL = { 亚洲: '#7a3a33', 欧洲: '#8a6a2c', 北美: '#3f5a4c', 大洋洲: '#4a4f63', 南美: '#5a4a2c', 非洲: '#3a3530', 其他: '#33302b' };
+$('#cband').innerHTML = (DATA.continents || []).map(c => `
+  <div class="cg" style="flex:${c.n};background:${CCOL[c.name] || '#33302b'}">
+    <b>${esc(c.name)}</b><span>${c.pct}%</span>
+  </div>`).join('');
+const cmax = Math.max(...CS.map(c => c.n));
+const main = CS.filter(c => c.n >= 2);
+const tail = CS.filter(c => c.n === 1);
+$('#geoGrid').innerHTML = main.map(c => `
+  <div class="geo-row">
+    <span class="nm">${esc(c.name)}</span>
+    <span class="tr"><i style="width:${(c.n / cmax * 100).toFixed(1)}%"></i></span>
+    <span class="nu">${c.n} 部</span>
+    <span class="pc">${(c.n / DATA.meta.n * 100).toFixed(1)}%</span>
+  </div>`).join('');
+$('#geoTail').innerHTML = tail.length
+  ? `另有 ${tail.length} 个国家 / 地区各 1 部：${tail.map(c => esc(c.name)).join('、')}。`
+  : '';
+
+/* ---------- 04 系列 ---------- */
+$('#sgrid').innerHTML = DATA.series.map((s, i) => {
+  const shown = s.done ? s.total : s.n;
+  const pct = Math.min(100, Math.round(shown / s.total * 100));
+  const badge = s.done
+    ? `<span class="badge done">全通关</span>${s.lastYear ? `<span class="badge ing">前 ${s.lastYear} 部去年已观</span>` : ''}`
+    : `<span class="badge ing">还差 ${s.total - s.n} 部</span>`;
+  const meta = s.lastYear
+    ? `<span>今年 ${s.n} 部 · 均分 ${s.avg === null ? '—' : s.avg.toFixed(1)} / 5</span><span>${s.films[0].d.slice(0, 7)} — ${s.films[s.films.length - 1].d.slice(0, 7)}</span>`
+    : `<span>均分 ${s.avg === null ? '—' : s.avg.toFixed(1)} / 5</span><span>${s.films[0].d.slice(0, 7)} — ${s.films[s.films.length - 1].d.slice(0, 7)}</span>`;
+  return `<article class="scard reveal" style="--d:${(i % 2) * .07}s">
+    <div class="sh">
+      <h4>${esc(s.name)}${badge}</h4>
+      <div class="frac">${shown}<small>/${s.total}</small></div>
+    </div>
+    <div class="prog"><i style="width:${pct}%"></i></div>
+    <div class="meta">${meta}</div>
+    <div class="chips">${s.films.map(f => `<span class="chip ${f.r === 5 ? 's5' : ''}">${esc(f.t)}</span>`).join('')}</div>
+  </article>`;
+}).join('');
+
+/* ---------- 05 热词 + 标签 ---------- */
+const HW = DATA.hotwords.slice(0, 56);
+const hmax = HW[0].n, hmin = HW[HW.length - 1].n;
+const hsize = n => 13 + Math.pow((n - hmin) / Math.max(1, hmax - hmin), .8) * 40;
+$('#hotcloud').innerHTML = HW.map((w, i) => {
+  const cls = i < 3 ? 'xl' : (w.n >= 7 ? 'g' : '');
+  return `<span class="${cls}" style="font-size:${hsize(w.n).toFixed(1)}px">${esc(w.w)}<em>${w.n}</em></span>`;
+}).join('');
+
+const tmax = Math.max(...DATA.tags.map(t => t.n));
+$('#tagcloud').innerHTML = DATA.tags.map(t => {
+  const s = 13 + (t.n / tmax) * 14;
+  return `<b style="font-size:${s.toFixed(1)}px">${esc(t.name)}<em>${t.n}</em></b>`;
+}).join('');
+
+/* ---------- 06 时间 ---------- */
+const maxM = Math.max(...DATA.months.map(m => m.n));
+$('#bars').innerHTML = DATA.months.map(m => `
+  <div class="bar ${m.n === maxM ? 'peak' : ''}">
+    <div class="track"><div class="fill" style="height:${(m.n / maxM * 100).toFixed(1)}%"><span class="cap">${m.n}</span></div></div>
+    <div class="mo">${String(m.m).padStart(2, '0')}</div>
+  </div>`).join('');
+
+const tip = $('#tip');
+function showTip(html, x, y) {
+  tip.innerHTML = html; tip.classList.add('show');
+  const r = tip.getBoundingClientRect();
+  let left = x + 16, top = y - r.height - 12;
+  if (left + r.width > innerWidth - 12) left = x - r.width - 16;
+  if (top < 12) top = y + 20;
+  tip.style.left = left + 'px'; tip.style.top = top + 'px';
+}
+$$('#bars .bar').forEach((el, i) => {
+  const m = DATA.months[i];
+  el.addEventListener('mouseenter', e => {
+    // 每次悬停随机抽一部当月五星
+    const five = m.five || [];
+    if (!five.length) {
+      showTip(`<span style="color:#8e8578">本月没有 5 星</span>`, e.clientX, e.clientY);
+      return;
+    }
+    const p = five[Math.floor(Math.random() * five.length)];
+    showTip(
+      `<span class="m">${m.m} 月 · ${m.n} 部 · 五星 ${five.length} 部</span>`
+      + `<b>《${esc(p.t)}》</b> ★★★★★<br><span style="color:#8e8578">${esc(p.dir)} · ${p.y}</span>`,
+      e.clientX, e.clientY);
+  });
+  el.addEventListener('mousemove', e => showTip(tip.innerHTML, e.clientX, e.clientY));
+  el.addEventListener('mouseleave', () => tip.classList.remove('show'));
+});
+
+const hmaxH = Math.max(...DATA.hours);
+$('#hours').innerHTML = DATA.hours.map((n, h) => `
+  <div class="hour ${h < 5 ? 'late' : ''}"><b>${n}</b><i style="height:${(n / hmaxH * 100).toFixed(1)}%"></i></div>`).join('');
+$('#hourAxis').innerHTML = DATA.hours.map((_, h) => `<span>${h % 3 === 0 ? String(h).padStart(2, '0') : ''}</span>`).join('');
+
+const dayN = DATA.hours.slice(9, 18).reduce((a, b) => a + b, 0);
+$('#hourFacts').innerHTML = [
+  ['Peak', `零点档 <b>${DATA.hours[0]}</b> 场，是全天最密的一小时`],
+  ['Late', `0—5 点合计 <b>${M.late}</b> 场，占全部 ${M.lateShare}%`],
+  ['Daytime', `9—18 点 <b>${dayN}</b> 场，白天基本不碰电影`],
+].map(([h, p], i) => `<div class="fact reveal" style="--d:${i * .07}s"><h4>${h}</h4><p>${p}</p></div>`).join('');
+
+const dmax = Math.max(...DATA.decades.map(d => d.n));
+$('#decades').innerHTML = DATA.decades.map(d => `
+  <div class="dec ${d.n >= 20 ? 'big' : ''}">
+    <div class="track"><i style="height:${Math.max(1.2, d.n / dmax * 100).toFixed(1)}%"><span class="n">${d.n}</span></i></div>
+    <em>${d.name}</em>
+  </div>`).join('');
+
+const peakDec = DATA.decades.reduce((a, b) => (b.n > a.n ? b : a), DATA.decades[0]);
+$('#decadeFacts').innerHTML = [
+  ['Oldest', `最老的一部是 <b>${M.oldest}</b> 年的片子`],
+  ['Peak', `<b>${peakDec.name}</b> 最多，共 ${peakDec.n} 部`],
+  ['Age', `平均片龄 <b>${(M.year - M.avgFilmYear).toFixed(1)}</b> 年`],
+].map(([h, p], i) => `<div class="fact reveal" style="--d:${i * .07}s"><h4>${h}</h4><p>${p}</p></div>`).join('');
+
+/* ---------- 07 2026 新片 ---------- */
+const stageBig = $('#stageBig');
+const stage = $('#stage');
+$('#dockN').textContent = M.n26;
+let stageStarted = false;
+
+function playStage() {
+  if (stageStarted) return;
+  stageStarted = true;
+  countUp(stageBig, M.n26, 1100);
+  // 数字长完 → 自动收缩归位成标题，不留空白
+  setTimeout(() => stage.classList.add('compact'), 1100 + 520);
+}
+
+const stageIO = new IntersectionObserver(es => {
+  es.forEach(e => { if (e.isIntersecting) { playStage(); stageIO.disconnect(); } });
+}, { threshold: 0.55 });
+stageIO.observe(stage);
+// 兜底：直接落在首屏时也要触发
+setTimeout(() => {
+  const r = stage.getBoundingClientRect();
+  if (r.top < innerHeight * 0.6 && r.bottom > 0) playStage();
+}, 400);
+
+$('#y26kpis').innerHTML = [
+  ['新片数量', M.n26, '部', `占全年 ${M.n26Rate}%`],
+  ['我的均分', M.avg26.toFixed(2), '/ 5', `老片 ${M.avgOld.toFixed(2)}，新片低 0.47`],
+  ['五星部数', DATA.f26.filter(f => f.r === 5).length, '部',
+    `占新片 ${(DATA.f26.filter(f => f.r === 5).length / M.n26 * 100).toFixed(0)}%`],
+].map(([k, v, u, d]) => `
+  <div class="y"><div class="k">${k}</div><div class="v">${v}<small>${u}</small></div><div class="d">${d}</div></div>`).join('');
+
+const FIDX = { '戛纳': 'May', '柏林': 'Feb', '威尼斯': 'Sep' };
+$('#festGrid').innerHTML = CONFIG.festivals.map((f, i) => {
+  const pending = f.total === null;
+  return `<div class="fest">
+    <span class="fidx">${FIDX[f.name] || '0' + (i + 1)}</span>
+    <div class="fh"><h4>${esc(f.name)}电影节</h4>
+      <div class="tot">${val(f.total)}${pending ? '' : '<small>部</small>'}</div></div>
+    <div class="fsub">${esc(f.en || '')}</div>
+    ${f.units.map(u => `<div class="frow"><span>${esc(u.n)}</span><b>${val(u.v)}</b></div>`).join('')}
+    <div class="frow" style="border:0;padding-top:14px">
+      <span class="tbd-tag">${pending ? '年末补录' : '已确认'}</span><span></span></div>
+  </div>`;
+}).join('');
+
+/* 三大电影节标题：永远用带“电影节”的全名，放不下就三张卡一起等比缩小字号（不折行、不删字） */
+const festFit = () => {
+  const hs = Array.from(document.querySelectorAll('#festGrid .fest h4'));
+  if (!hs.length) return;
+  hs.forEach((h) => { if (!h.dataset.full) h.dataset.full = h.textContent.trim(); h.textContent = h.dataset.full; h.style.fontSize = ''; });
+  let size = parseFloat(getComputedStyle(hs[0]).fontSize) || 19;
+  for (let i = 0; i < 5; i++) {
+    let k = 1;
+    hs.forEach((h) => {
+      h.style.whiteSpace = 'nowrap';
+      const need = h.scrollWidth, have = h.clientWidth;
+      if (need > have + 0.5 && need > 0) k = Math.min(k, have / need);
+    });
+    if (k >= 0.999) break;
+    size = Math.max(6, size * k * 0.985);
+    hs.forEach((h) => { h.style.fontSize = size.toFixed(2) + 'px'; });
+  }
+};
+festFit();
+let festFitT = 0;
+addEventListener('resize', () => { clearTimeout(festFitT); festFitT = setTimeout(festFit, 120); });
+window.addEventListener('load', festFit);
+const mmax = Math.max(...DATA.months26.map(m => m.n));
+$('#miniM').innerHTML = DATA.months26.map(m => `
+  <div class="mb"><div class="t"><i style="height:${(m.n / mmax * 100).toFixed(0)}%"><b>${m.n || ''}</b></i></div><em>${m.m}</em></div>`).join('');
+
+$('#cmp26').innerHTML = `
+  <div class="c new"><div class="k">2026 新片</div><div class="v">${M.avg26.toFixed(2)}<small> / 5</small></div>
+    <div class="meter"><i style="width:${(M.avg26 / 5 * 100).toFixed(0)}%"></i></div></div>
+  <div class="c"><div class="k">往年老片</div><div class="v">${M.avgOld.toFixed(2)}<small> / 5</small></div>
+    <div class="meter"><i style="width:${(M.avgOld / 5 * 100).toFixed(0)}%"></i></div></div>`;
+
+$('#y26list').innerHTML = DATA.f26.map(f => `
+  <span class="chip ${f.r === 5 ? 's5' : ''}" title="${esc(f.dir)}">${esc(f.t)} <em style="font-style:normal;color:var(--dim-2);font-size:9px">${'★'.repeat(f.r || 0)}</em></span>`).join('');
+
+/* ---------- 08 年度五佳 ---------- */
+function findF26(title) { return DATA.f26.find(f => f.t === title) || null; }
+const HUE = s => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
+const stars = n => '★'.repeat(n) + `<span>${'★'.repeat(5 - n)}</span>`;
+
+function posterHTML(title, sub) {
+  const h = HUE(title);
+  return `<div class="poster" data-name="${esc(title)}">
+    <div class="art" style="--h:${h}">
+      <span class="ay">2026</span>
+      <span class="ac"></span>
+      <span class="pt">${esc(title)}</span>
+      <span class="ln"></span>
+      <span class="py">${esc(sub)}</span>
+    </div>
+    <img alt="" />
+  </div>`;
+}
+
+const T5 = CONFIG.top5.map((c, i) => {
+  const f = findF26(c.t);
+  return {
+    rank: i + 1, t: c.t, fixed: !!c.fixed,
+    dir: f ? f.dir : (c.dir || '—'),
+    cast: f ? f.cast : (c.cast || '—'),
+    y: '2026', db: f ? f.db : null, r: f ? f.r : 5,
+    runtime: c.runtime, quote: c.quote || '',
+  };
+});
+
+const first = T5[0];
+$('#top5wrap').innerHTML = `
+  <div class="p1 reveal">
+    ${posterHTML(first.t, `${first.dir} · 2026`)}
+    <div class="pinfo">
+      <div class="rank">NO.01 · 年度最佳</div>
+      <h3>${esc(first.t)}</h3>
+      <div class="sub">${esc(first.dir)} 导演 ／ 2026</div>
+      <div class="credits">
+        <span>主演 <b>${esc(first.cast)}</b></span>
+        <span>片长 <b>${first.runtime ? first.runtime + ' 分钟' : '<span class="tbd">—</span>'}</b></span>
+        <span>豆瓣 <b>${first.db ?? '—'}</b></span>
+      </div>
+      <div class="stars">${stars(first.r || 5)}</div>
+      <div class="quote">「${esc(first.quote)}」</div>
+    </div>
+  </div>
+  <div class="t5-row" id="t5row"></div>`;
+
+$('#t5row').innerHTML = T5.slice(1).map(c => `
+  <article class="pcard reveal">
+    ${posterHTML(c.t, `${c.dir} · 2026`)}
+    <div class="rk">NO.0${c.rank} ${c.fixed ? '' : '· 暂定'}</div>
+    <h4>${esc(c.t)}</h4>
+    <div class="cr"><span>${esc(c.dir)} 导演</span><span>${esc(c.cast)}</span></div>
+    <div class="stars">${stars(c.r || 5)}</div>
+  </article>`).join('');
+
+$('#posterNote').innerHTML = `※ 海报位置已留好：把图片命名为 <code>《片名》海报.jpg</code>（也支持 png / webp），放进 <code>${CONFIG.posterDir}/</code> 文件夹即可自动替换；找不到图片时显示排版好的占位封面。`;
+
+/* 海报自动加载：海报/《片名》海报.jpg → .png → .webp，全失败则保留占位 */
+$$('.poster[data-name]').forEach(p => {
+  const name = p.dataset.name, img = $('img', p);
+  const urls = CONFIG.posterExts.map(ext => encodeURI(`${CONFIG.posterDir}/《${name}》海报.${ext}`));
+  let i = 0;
+  const tryNext = () => {
+    if (i >= urls.length) return;
+    img.onload = () => img.classList.add('on');
+    img.onerror = () => { i++; tryNext(); };
+    img.src = urls[i];
+  };
+  tryNext();
+});
+
+/* ---------- footer ---------- */
+$('#footerSrc').innerHTML = `${M.year}.Douban286590474.xlsx<br>
+  报告制作：胡嘉祺、DeepSeek-V4.1-Flash-1017`;
+$('#footerCopy').innerHTML = `© ${M.year} 胡嘉祺`;
+
+/* ---------- 进度 & 导航 ---------- */
+const secs = $$('main section');
+$('#rail').innerHTML = [{ id: 's00', t: '封面' }].concat(secs.map(s => ({
+  id: s.id, t: s.querySelector('.sec-titles h2')?.textContent || (s.id === 's07' ? '2026 新片' : '')
+}))).map((s, i) => `<a href="#${s.id}" data-id="${s.id}"><span>${i === 0 ? '封面' : String(i).padStart(2, '0') + ' · ' + s.t}</span></a>`).join('');
+
+const prog = $('#progress');
+function onScroll() {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  let cur = 's00';
+  secs.forEach(s => { if (s.getBoundingClientRect().top < innerHeight * 0.4) cur = s.id; });
+  $$('#rail a').forEach(a => a.classList.toggle('on', a.dataset.id === cur));
+}
+addEventListener('scroll', onScroll, { passive: true });
+onScroll();
+$$('#rail a').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  document.getElementById(a.dataset.id).scrollIntoView({ behavior: 'smooth', block: 'start' });
+}));
+
+/* ---------- 年份下拉 ---------- */
+(function yearSwitch() {
+  const sw = document.getElementById('yearSwitch');
+  const btn = document.getElementById('ysBtn');
+  if (!sw || !btn) return;
+  const close = () => { sw.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = sw.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', e => { if (!sw.contains(e.target)) close(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+})();
+
+/* ---------- 封面 · 剧集 / 短片展开（点击文字，裂缝最亮点对齐到该词正下方） ---------- */
+(function coverDrawers() {
+  const pairs = [['bkHit', 'bkWrap', '书'], ['tvHit', 'tvWrap', '剧集'], ['shHit', 'shWrap', '短片']];
+  const list = [];
+
+  /* 量出「剧集」「短片」这几个字本身的水平中心，裂缝最亮点对准这里 */
+  function wordCenter(btn, word) {
+    const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT, null);
+    let node, found = null;
+    while ((node = walker.nextNode())) {
+      const i = node.data.lastIndexOf(word);
+      if (i >= 0) { found = { node, i }; break; }
+    }
+    if (!found) {
+      const r = btn.getBoundingClientRect();
+      return r.left + r.width / 2;
+    }
+    const range = document.createRange();
+    range.setStart(found.node, found.i);
+    range.setEnd(found.node, found.i + word.length);
+    const box = range.getBoundingClientRect();
+    return box.width ? box.left + box.width / 2 : btn.getBoundingClientRect().left + btn.getBoundingClientRect().width / 2;
+  }
+
+  function peak(wrap, btn, word) {
+    const tear = wrap.querySelector('.tv-tear');
+    if (!tear) return;
+    const t = tear.getBoundingClientRect();
+    if (!t.width) return;
+    const p = ((wordCenter(btn, word) - t.left) / t.width) * 100;
+    tear.style.setProperty('--peak', Math.max(8, Math.min(92, p)).toFixed(1) + '%');
+  }
+
+  function make(btn, wrap, word) {
+    let timer = null;
+    let peakTimer = null;
+
+    const api = {
+      btn, wrap, word,
+      setOpen(open) {
+        clearTimeout(timer);
+        if (open) {
+          wrap.classList.remove('closing');
+          wrap.classList.add('open');
+          /* 展开动画结束后再定峰值，两次：先跟上布局，再收尾校准 */
+          requestAnimationFrame(() => peak(wrap, btn, word));
+          clearTimeout(peakTimer);
+          peakTimer = setTimeout(() => peak(wrap, btn, word), 720);
+        } else {
+          wrap.classList.remove('open');
+          wrap.classList.add('closing');
+          timer = setTimeout(() => wrap.classList.remove('closing'), 620);
+        }
+        btn.setAttribute('aria-expanded', String(open));
+      }
+    };
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      list.forEach(o => { if (o !== api) o.setOpen(false); });
+      api.setOpen(true);
+      enterFocus({ '剧集': 'tv', '短片': 'sh', '书': 'bk' }[word] || 'tv');
+    });
+
+    return api;
+  }
+
+  pairs.forEach(([bid, wid, word]) => {
+    const b = document.getElementById(bid);
+    const w = document.getElementById(wid);
+    if (b && w) list.push(make(b, w, word));
+  });
+  if (!list.length) return;
+
+  /* ---------- 聚焦模式：剧集 / 短片顶到「135 部 电影长片」的位置 ---------- */
+  const heroEl = document.querySelector('.hero');
+  const focusHead = document.getElementById('focusHead');
+  const fhN = document.getElementById('fhN');
+  const fhTag = document.getElementById('fhTag');
+  const fhBack = document.getElementById('fhBack');
+
+  function layoutFocus(kind) {
+    const src = kind === 'bk' ? document.getElementById('bkN')
+      : kind === 'tv' ? document.getElementById('tvN')
+      : document.getElementById('shN');
+    fhN.textContent = src.textContent.trim();
+    fhTag.textContent = kind === 'bk' ? '书' : kind === 'tv' ? '剧集' : '短片';
+    const unit = focusHead.querySelector('.fh-u');
+    if (unit) unit.textContent = kind === 'bk' ? '本' : '部';
+  }
+
+  /* 书单列：逐行实时测量文字实际宽度，一行确实放不下才往下收信息 */
+  function layoutBooks() {
+    const wrap = document.getElementById('bkWrap');
+    if (!wrap || !wrap.classList.contains('open')) return;
+    const rows = [...wrap.querySelectorAll('.bk-row')];
+    if (!rows.length) return;
+    /* 手机端与电脑端同一套五列（横向滚动），不再收成两行 */
+    if (innerWidth <= 720) { rows.forEach((r) => r.classList.remove('two', 'no-pub')); return; }
+    if (rows[0].getBoundingClientRect().width < 240) return;
+
+    const textW = (el) => {
+      let w = 0;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      let n;
+      while ((n = walker.nextNode())) {
+        if (!n.data.trim()) continue;
+        const rg = document.createRange();
+        rg.selectNodeContents(n);
+        w += rg.getBoundingClientRect().width;
+      }
+      return w;
+    };
+    const visible = (el) => el.offsetParent !== null && el.getBoundingClientRect().width > 0;
+    const hard = (el) => el.classList.contains('bk-t') || el.classList.contains('bk-a') || el.classList.contains('bk-p');
+    const crowded = (r) => [...r.children].filter(visible).some(el =>
+      hard(el) ? textW(el) > el.clientWidth - 4 : textW(el) > el.clientWidth + 2);
+    const overflowing = (r) => [...r.children].filter(visible)
+      .some(el => textW(el) > el.clientWidth + 1);
+
+    rows.forEach((r) => { r.classList.remove('two', 'no-pub'); });
+    /* 整表统一：只要有一行放不下，全表一起收，保证列与列对齐 */
+    if (rows.some(crowded)) {
+      rows.forEach((r) => r.classList.add('two'));
+      if (rows.some(overflowing)) rows.forEach((r) => r.classList.add('no-pub'));
+    }
+  }
+
+  function enterFocus(kind) {
+    layoutFocus(kind);
+    window.scrollTo(0, 0);
+    document.body.classList.add('focus-mode');
+    heroEl.classList.add('focus');
+    setTimeout(() => window.scrollTo(0, 0), 60);
+    if (kind === 'bk') setTimeout(layoutBooks, 90);
+  }
+
+  function exitFocus() {
+    heroEl.classList.remove('focus');
+    document.body.classList.remove('focus-mode');
+    list.forEach(o => o.setOpen(false));
+    window.scrollTo(0, 0);
+    setTimeout(refresh, 260);
+  }
+
+  if (fhBack) fhBack.addEventListener('click', exitFocus);
+
+  const refresh = () => list.forEach(o => peak(o.wrap, o.btn, o.word));
+  window.addEventListener('resize', () => { refresh(); layoutBooks(); });
+  window.addEventListener('load', refresh);
+  setTimeout(refresh, 320);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') exitFocus();
+  });
+})();
+
+/* ---------- go ---------- */
+watchAll();
+window.addEventListener('load', () => { watchAll(); });
+
+/* ---------- 窗口缩放后停在原处：锚点取视口 38% 高度处那一个具体元素，按它换算回去 ---------- */
+(() => {
+  const RATIO = 0.38;                       // 锚点高度：视口 38% 处
+  const DECOR = '.rail,.progress,.darkness,.spotlight,.tip,.yearswitch';
+  if (!document.querySelectorAll('section').length) return;
+  let cur = null, snap = null, timer = 0, moved = false;
+
+  const pick = () => {
+    const p = innerHeight * RATIO;
+    for (const e of document.elementsFromPoint(innerWidth * .5, p)) {
+      if (!e || e === document.body || e === document.documentElement) continue;
+      if (e.closest(DECOR)) continue;
+      const r = e.getBoundingClientRect();
+      if (r.height < 2) continue;
+      const pos = getComputedStyle(e).position;
+      if (pos === 'fixed' || pos === 'sticky') continue;   // 固定/粘性元素不随滚动走，不能当锚
+      const sec = e.closest('section');
+      const sr = sec ? sec.getBoundingClientRect() : null;
+      return {
+        el: e, r: Math.min(1, Math.max(0, (p - r.top) / r.height)),
+        sec: sec, secR: sr && sr.height ? Math.min(1, Math.max(0, (p - sr.top) / sr.height)) : 0,
+      };
+    }
+    return null;
+  };
+
+  const capture = () => { const a = pick(); if (a) cur = a; };
+
+  const box = (s) => { const r = s.getBoundingClientRect(); return { top: r.top + window.scrollY, h: r.height }; };
+
+  const fix = () => {
+    if (!snap) return;
+    if (moved) { snap = null; return; }        // 用户自己滚过，就不抢位置了
+    let a = null;
+    if (snap.el && snap.el.isConnected && snap.el.getBoundingClientRect().height >= 2) {
+      const m = box(snap.el); a = { top: m.top, h: m.h, r: snap.r };
+    } else if (snap.sec && snap.sec.isConnected) {
+      const m = box(snap.sec); a = { top: m.top, h: m.h, r: snap.secR };
+    }
+    if (!a) { snap = null; return; }
+    const want = a.top + a.r * a.h - innerHeight * RATIO;
+    if (Math.abs(want - window.scrollY) > 3) window.scrollTo({ top: want, left: 0, behavior: 'instant' });
+  };
+
+  capture();
+  setInterval(() => { if (!snap) capture(); }, 250);   // 位置用定时采样，不依赖 scroll 事件
+  addEventListener('load', capture);
+  ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach((ev) =>
+    addEventListener(ev, () => { if (snap) moved = true; }, { passive: true }));
+
+  addEventListener('resize', () => {
+    if (!snap && cur) snap = cur;
+    moved = false;
+    fix();                                     // 拖动窗口时即时跟住，不等松手
+    clearTimeout(timer);
+    timer = setTimeout(() => {                 // 收尾：补两次，吃掉残留位移
+      fix();
+      setTimeout(() => { fix(); snap = null; }, 500);
+    }, 900);
+  });
+})();/* ---------- 熄灯 / 开灯：状态只有 body.lights-out，L 键切换 ---------- */
+(() => {
+  const body = document.body, root = document.documentElement;
+  const touch = matchMedia('(hover:none), (pointer:coarse)').matches || 'ontouchstart' in window;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (touch) body.classList.add('touch');
+  if (touch || reduce) return;
+
+  let tx = innerWidth * .5, ty = innerHeight * .42, x = tx, y = ty, id = 0;
+  const paint = () => {
+    root.style.setProperty('--mx', x.toFixed(1) + 'px');
+    root.style.setProperty('--my', y.toFixed(1) + 'px');
+  };
+  const kick = () => { if (!id) id = requestAnimationFrame(step); };
+  const step = () => {
+    id = 0;
+    const dx = tx - x, dy = ty - y;
+    x += dx * .13; y += dy * .13;
+    paint();
+    if (Math.abs(dx) > .6 || Math.abs(dy) > .6) kick();
+  };
+
+  paint(); kick();
+  const lights = () => { body.classList.toggle('lights-out'); kick(); };
+
+  addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    if (!body.classList.contains('lights-out')) return;
+    if (!e.clientX && !e.clientY) return;
+    tx = e.clientX; ty = e.clientY;
+    kick();
+  }, { passive: true });
+
+  addEventListener('keydown', (e) => {
+    const tag = (e.target && e.target.tagName) || '';
+    if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+    const k = e.key;
+    if (k === 'l' || k === 'L') lights();
+    else if (k === 'Escape' && body.classList.contains('lights-out')) lights();
+  });
+})();
+</script>
+
+
+<div class="spotlight" aria-hidden="true"></div>
+<div class="darkness" aria-hidden="true"></div></body></html>
