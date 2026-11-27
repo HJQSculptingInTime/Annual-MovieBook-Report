@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -6,16 +6,15 @@
 <title>2026 书籍报告 · 14 本</title>
 <!-- ======================================================================
    2026 书籍报告 · 2026.BookReview.html（单文件、离线，无外部依赖）
-   从 2026 观影报告里拆出来的：影视页封面「13 本书」点一下跳到这里。
+   从 2026 观影报告里拆出来的：影视页封面「14 本书」点一下跳到这里。
    结构：标题 → 导语 + 切换（立体书架 / 表格）→ 立体书架 或 书单表格 → 统计图表（类型环 / 作者 / 阅读方式）→ 结束语
-   数据由 rebuild.py 从豆瓣导出的 xlsx 算出，注入 DATA 常量；页面脚本按 DATA.books 现算现画。
-   手机端（≤760px）只显示书单表格。
+   数据直接内联在 DATA 里（只有 books 一项，14 条）；图表、书架、卡片全部按 DATA.books 现算现画。
+   立体书架电脑与手机都适配：电脑端一层铺满 1120px，手机端（≤760px）按屏宽重排成多层。
    ====================================================================== -->
 <style>
 /* ---------- 设计变量与基础版式（与观影报告同一套） ---------- */
   :root{
     --bg:#08080a;
-    --panel:#101014;
     --line:rgba(255,255,255,.09);
     --line-2:rgba(255,255,255,.16);
     --ink:#ece6dc;
@@ -23,11 +22,9 @@
     --dim-2:#6b645b;
     --gold:#d8a657;
     --gold-2:#f0cf95;
-    --red:#c1554a;
     --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun",serif;
     --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
     --mono:"SF Mono",ui-monospace,Consolas,"JetBrains Mono",monospace;
-    --max:1180px;
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -158,13 +155,15 @@
   letter-spacing:.14em;color:var(--dim-2)}
 @media (max-width:760px){.bp-hero{padding:88px 16px 28px}.bp-nav{left:16px}.bp-hero .eyebrow{font-size:9.5px;letter-spacing:.3em}}
 /* ─────────────────────────────────────────────────────────────
-   §17 书架 —— 2026.BookReview.html 的主体（#bkWrap，≤760px 只留书单表格）
+   §17 书架 —— 2026.BookReview.html 的主体（#bkWrap，两种模式电脑 / 手机都有）
    两种模式：立体书架（书脊朝外，点一本：抽出 → 转身 → 翻开）/ 表格（原书单）；统计图表（类型环 + 作者 + 阅读方式）两种模式下都有
    3D 要点：.shelf-scene 出透视，.shelf-stage 整体微俯 6°；每本书是一个盒（书脊 / 封面 / 封底 / 书口 / 顶面）；
    在架上 = 整本绕左竖轴 rotateY(90deg) 书脊朝外；翻开 = 转回 0deg，封面再绕书脊侧 rotateY(-160deg)。
    preserve-3d 的元素上不能加 filter / opacity / overflow（会被压扁），调暗只加在各面上的 .fc。
+   手机端（≤760px）：设计坐标不再固定 1120×480，由脚本 layout() 按屏宽现算，每层 6–7 本、多层叠放；
+   点开的书直接在书页上显示信息（收起后的说明条只留「哪一本 + 怎么合上」）。
    ───────────────────────────────────────────────────────────── */
-.bk-focus-only{display:none}
+.bk-focus-only{display:block}
 .bk-hint{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)}
 .bk-mode{display:inline-flex;border:1px solid var(--line-2);border-radius:99px;padding:3px;background:rgba(255,255,255,.02)}
 .bk-mode button{font:inherit;font-size:12px;letter-spacing:.12em;color:var(--dim);background:none;border:0;border-radius:99px;padding:6px 16px;cursor:pointer;transition:.25s}
@@ -175,31 +174,35 @@
 
 /* ---- 立体书架 ---- */
 .shelf-fit{position:relative;width:100%}
-.shelf-scale{position:relative;width:1120px;height:480px;transform-origin:0 0}
-.shelf-scene{position:relative;width:1120px;height:480px;perspective:2000px;perspective-origin:50% 35%;user-select:none;
+/* 设计坐标的宽高由脚本按屏宽写入（--dw / --dh）：电脑端固定 1120×480，手机端按屏宽重排 */
+.shelf-scale{position:relative;width:var(--dw,1120px);height:var(--dh,480px);transform-origin:0 0}
+.shelf-scene{position:relative;width:var(--dw,1120px);height:var(--dh,480px);perspective:2000px;perspective-origin:50% 35%;user-select:none;
   background:
     radial-gradient(58% 62% at 50% 88%,rgba(216,166,87,.14),rgba(216,166,87,.035) 46%,transparent 72%),
     linear-gradient(180deg,#0c0c10,#07070a)}
-.shelf-stage{--ytop:417px;--lift:84px;--zl:150px;position:absolute;inset:0;
-  transform-style:preserve-3d;transform:rotateX(-6deg);transform-origin:50% 100%}
-.slots{position:absolute;inset:0;transform-style:preserve-3d}
-.plank{position:absolute;left:0;right:0;top:var(--ytop);height:16px;transform-style:preserve-3d}
+.shelf-stage{--ytop:417px;--lift:84px;--zl:150px;--tilt:-6deg;--ph:16px;position:absolute;inset:0;
+  transform-style:preserve-3d;transform:rotateX(var(--tilt));transform-origin:50% 100%}
+.slots,.planks{position:absolute;inset:0;transform-style:preserve-3d}
+/* 一层书架 = 一块木板 + 板下一片暖光；手机端多层由脚本按层生成（planksBox） */
+.plank{position:absolute;left:0;right:0;top:var(--ytop);height:var(--ph,16px);transform-style:preserve-3d}
 .plank-face{position:absolute;inset:0;border-top:1px solid rgba(240,207,149,.42);
   background:linear-gradient(180deg,#4a3524,#2a1d12 40%,#150e08)}
-.plank-top{position:absolute;left:0;right:0;bottom:100%;height:230px;transform-origin:0 100%;transform:rotateX(90deg);
+.plank-top{position:absolute;left:0;right:0;bottom:100%;height:var(--pdepth,230px);transform-origin:0 100%;transform:rotateX(90deg);
   background:linear-gradient(180deg,#120c07,#3a2a1b)}
-.plank-glow{position:absolute;left:0;right:0;top:calc(var(--ytop) + 16px);height:60px;pointer-events:none;
+.plank-glow{position:absolute;left:0;right:0;top:calc(var(--ytop) + var(--ph,16px));height:var(--pgh,60px);pointer-events:none;
   background:radial-gradient(50% 100% at 50% 0,rgba(216,166,87,.10),transparent 72%)}
-.float-shadow{position:absolute;top:calc(var(--ytop) - 7px);left:var(--sx,0);width:var(--sw,0);height:16px;border-radius:50%;
+.float-shadow{position:absolute;top:0;left:var(--sx,0);width:var(--sw,0);height:16px;border-radius:50%;
   background:radial-gradient(50% 50% at 50% 50%,rgba(0,0,0,.85),rgba(0,0,0,0) 72%);filter:blur(2px);
   transform:translateZ(1px);opacity:0;transition:opacity .5s,left .6s,width .6s;pointer-events:none}
 .shelf-stage.has-open .float-shadow{opacity:1}
+/* 重新排版时先把过渡关掉：否则热区量的是还在动画中的书脊位置（见 layout 里的 no-anim） */
+.shelf-stage.no-anim .slot,.shelf-stage.no-anim .b-cover{transition:none!important}
 
 /* 一本书 = 一个 3D 盒。元素盒本身是「封面」所在的平面（宽 = 封面宽 --d，高 = 书高 --h，厚 = 书脊宽 --t） */
 .slot{position:absolute;left:0;top:calc(var(--ytop) - var(--h));width:var(--d);height:var(--h);
   transform-style:preserve-3d;transform-origin:0 50%;cursor:pointer;outline:none;
   transform:translateX(var(--x)) translateY(0) translateZ(0) rotateY(90deg);
-  transition:transform .6s cubic-bezier(.2,.7,.2,1)}
+  transition:transform .6s cubic-bezier(.2,.7,.2,1);will-change:transform}
 .fc{position:absolute;transition:filter .5s}
 .shelf-stage.has-open .slot:not(.open):not(.closing){transform:translateX(var(--x)) translateY(0) translateZ(-70px) rotateY(90deg)}
 .shelf-stage.has-open .slot:not(.open):not(.closing) .fc{filter:brightness(.6) saturate(.85)}
@@ -212,20 +215,21 @@
 .shelf-hits[hidden]{display:none}
 .hit{position:absolute;cursor:pointer;outline:none;border-radius:3px}
 .hit:focus-visible{box-shadow:0 0 0 1px var(--gold-2);outline:none}
-.slot.open{animation:bkOpen 1.25s cubic-bezier(.45,.05,.2,1) both;
-  transform:translateX(var(--x1)) translateY(calc(var(--lift) * -1)) translateZ(var(--zl)) rotateY(0deg)}
-.slot.closing{animation:bkClose .85s ease-in-out both}
+/* 翻开时缩放原点改到「书脚」，放大只往上长，书脚始终踩在架上，不会顶穿黑框下沿 */
+.slot.open{animation:bkOpen 1.25s cubic-bezier(.45,.05,.2,1) both;transform-origin:0 100%;
+  transform:translateX(var(--x1)) translateY(calc(var(--lift) * -1)) translateZ(var(--zl)) rotateY(0deg) scale(var(--sc,1))}
+.slot.closing{animation:bkClose .85s ease-in-out both;transform-origin:0 100%}
 @keyframes bkOpen{
-  0%{transform:translateX(var(--x0)) translateY(0) translateZ(0) rotateY(90deg)}
-  34%{transform:translateX(var(--x0)) translateY(0) translateZ(var(--zl)) rotateY(90deg)}
-  70%{transform:translateX(var(--x1)) translateY(-44px) translateZ(var(--zl)) rotateY(0deg)}
-  100%{transform:translateX(var(--x1)) translateY(calc(var(--lift) * -1)) translateZ(var(--zl)) rotateY(0deg)}
+  0%{transform:translateX(var(--x0)) translateY(0) translateZ(0) rotateY(90deg) scale(1)}
+  34%{transform:translateX(var(--x0)) translateY(0) translateZ(var(--zl)) rotateY(90deg) scale(1)}
+  70%{transform:translateX(var(--x1)) translateY(-44px) translateZ(var(--zl)) rotateY(0deg) scale(var(--sc,1))}
+  100%{transform:translateX(var(--x1)) translateY(calc(var(--lift) * -1)) translateZ(var(--zl)) rotateY(0deg) scale(var(--sc,1))}
 }
 @keyframes bkClose{
-  0%{transform:translateX(var(--x1)) translateY(calc(var(--lift) * -1)) translateZ(var(--zl)) rotateY(0deg)}
-  30%{transform:translateX(var(--x1)) translateY(-44px) translateZ(var(--zl)) rotateY(0deg)}
-  66%{transform:translateX(var(--x0)) translateY(0) translateZ(var(--zl)) rotateY(90deg)}
-  100%{transform:translateX(var(--x0)) translateY(0) translateZ(0) rotateY(90deg)}
+  0%{transform:translateX(var(--x1)) translateY(calc(var(--lift) * -1)) translateZ(var(--zl)) rotateY(0deg) scale(var(--sc,1))}
+  30%{transform:translateX(var(--x1)) translateY(-44px) translateZ(var(--zl)) rotateY(0deg) scale(var(--sc,1))}
+  66%{transform:translateX(var(--x0)) translateY(0) translateZ(var(--zl)) rotateY(90deg) scale(1)}
+  100%{transform:translateX(var(--x0)) translateY(0) translateZ(0) rotateY(90deg) scale(1)}
 }
 /* 各面：封底 / 书脊 / 书口 / 顶面 */
 .b-back{inset:0;background:var(--c);transform:translateZ(calc(var(--t) * -1)) rotateY(180deg)}
@@ -239,6 +243,10 @@
 .sp-t{writing-mode:vertical-rl;text-orientation:upright;font-family:var(--serif);font-weight:600;line-height:1;
   font-size:var(--fs,16px);letter-spacing:.1em;white-space:nowrap;max-height:calc(100% - 130px);overflow:hidden;text-shadow:var(--tsh,0 1px 0 rgba(0,0,0,.3))}
 .sp-a{writing-mode:vertical-rl;text-orientation:upright;font-family:var(--serif);font-size:9px;letter-spacing:.14em;line-height:1;opacity:.82;white-space:nowrap}   /* nowrap：作者名不再折成第二列 */
+/* 「[英]」这类国籍前缀：竖排里放一个「横排的小方块」，方括号与国名在同一排、不再上下各占一格。
+   inline-block + horizontal-tb 的内容不会被旋转，只沿竖列占一个字格的高度，横向略宽也无妨（书脊够宽） */
+/* margin-inline-end：竖排里就是「往下」的方向，给方块和作者名之间留一点气口 */
+.vcm{display:inline-block;writing-mode:horizontal-tb;font-size:1em;line-height:1;letter-spacing:0;white-space:nowrap;margin-inline-end:.18em}
 .b-fore{top:0;bottom:0;left:100%;width:var(--t);transform-origin:0 50%;transform:rotateY(90deg);
   background:repeating-linear-gradient(180deg,rgba(0,0,0,.05) 0 1px,transparent 1px 3px),#e6dcc6}
 .b-top{left:0;width:100%;top:calc(var(--t) * -1);height:var(--t);transform-origin:0 100%;transform:rotateX(90deg);
@@ -292,14 +300,57 @@
 .shelf-nav button{font:inherit;font-size:11px;letter-spacing:.12em;color:var(--dim);background:none;border:1px solid var(--line-2);border-radius:99px;padding:4px 12px;cursor:pointer;transition:.2s}
 .shelf-nav button:hover{color:var(--gold-2);border-color:var(--gold)}
 
-/* ---- 容器：#bkWrap 里从上到下是 导语与切换 → 立体书架 / 表格 → 统计图表 → 结束语。手机端只留表格 ---- */
+/* ── 手机端（≤760px）：书架改成窄版多层，字缩小、触控按钮加大 ── */
+@media (max-width:760px){
+  .bk-modebar{gap:10px 12px;margin:0 0 18px}
+  .bk-lede{font-size:13px;line-height:1.9;margin:0 0 18px}
+  .bk-hint{font-size:9.5px;letter-spacing:.1em}
+  .bk-mode button{padding:7px 14px;font-size:11.5px}
+  .shelf-scene{perspective-origin:50% 42%;border-radius:4px}
+  .sp-no{font-size:6.5px;letter-spacing:.12em}
+  .b-spine{padding:7px 0 6px}
+  .sp-rule{width:40%;height:4px}
+  .sp-t{max-height:calc(100% - 62px);letter-spacing:.06em}
+  .sp-a{font-size:6.8px;letter-spacing:.08em}
+  .slot.kb .b-spine{box-shadow:inset 0 0 0 1px var(--gold-2)}
+  .pg{padding:7px 7px 6px;overflow:hidden}
+  .pg h5{font-size:11.5px;line-height:1.25;white-space:normal;overflow:visible}
+  .pg .ps{font-size:6px;letter-spacing:.08em;padding:2px 0 3px;margin-bottom:3px}
+  .pg dl{grid-template-columns:26px minmax(0,1fr);column-gap:3px;row-gap:0}
+  .pg dt{font-size:6.2px;padding-top:1.6px;letter-spacing:0}
+  /* 手机端页面窄，值一律允许折行，不再省略号截断 */
+  .pg dd{font-size:8.2px;line-height:1.25;white-space:normal;word-break:break-word;overflow:visible;text-overflow:clip}
+  .pg dd.mono{font-size:6.6px;padding-top:1.4px;letter-spacing:0}
+  .pg dd b{font-size:7.6px}
+  .pg dd span{font-size:6.4px;margin-left:2px}
+  .cv-frame{inset:6px}
+  .cv-year{top:9px;font-size:6.5px;letter-spacing:.16em}
+  .cv-t{left:11px;top:22px;max-height:calc(100% - 52px);letter-spacing:.08em}
+  .cv-a{right:12px;bottom:22px;font-size:8px;letter-spacing:.12em}
+  .cv-pub{bottom:8px;font-size:6px;letter-spacing:.14em}
+  .ci-frame{inset:7px}
+  .ci-t{right:11px;top:18px;max-height:calc(100% - 42px);letter-spacing:.08em}
+  .ci-a{right:calc(11px + var(--cfs,16px) * 1.5);top:20px;font-size:7.5px}
+  .ci-p{left:10px;bottom:9px;font-size:6.5px}
+  .shelf-cap{font-size:10px;line-height:1.7;gap:10px;margin-top:16px;min-height:0}
+  .shelf-cap b{font-size:12.5px}
+  .shelf-nav button{padding:9px 14px;font-size:11px}
+  /* 图表区在手机端收一收间距 */
+  .bk-stats{margin-top:44px}
+  #bkWrap[data-mode="shelf"] .bk-stats{margin-top:26px}
+  .bk-stats .sub-h{margin-top:40px}
+  .bk-stats .sub-h:first-child{margin-top:0}
+}
+
+/* ---- 容器：#bkWrap 里从上到下是 导语与切换 → 立体书架 / 表格 → 统计图表 → 结束语 ----
+   两种模式电脑 / 手机都有：书架（手机端每层 6–7 本、自动叠层）/ 表格（窄屏横向滚动） ---- */
+.bk-top,.bk-stats{width:min(860px,100%);margin-left:auto;margin-right:auto}
+#shelfView{width:100%;margin-left:auto;margin-right:auto}
+#bkWrap[data-mode="detail"] .bk-rows{margin-top:0}
+#bkWrap[data-mode="shelf"] .bk-rows{display:none}
+#bkWrap[data-mode="shelf"] .bk-end{margin-top:40px}
 @media (min-width:761px){
-  .bk-focus-only{display:block}
-  .bk-top,.bk-stats{width:min(860px,100%);margin-left:auto;margin-right:auto}
-  #shelfView{width:min(1120px,100%);margin-left:auto;margin-right:auto}
-  #bkWrap[data-mode="detail"] .bk-rows{margin-top:0}
-  #bkWrap[data-mode="shelf"] .bk-rows{display:none}
-  #bkWrap[data-mode="shelf"] .bk-end{margin-top:40px}
+  #shelfView{width:min(1120px,100%)}
   .bk-stats{margin-top:58px}
   #bkWrap[data-mode="shelf"] .bk-stats{margin-top:30px}      /* 表格模式下的那些图表，书架下面同样放一份 */
 }
@@ -336,7 +387,6 @@
 .au-card .ah{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .au-card h4{margin:0;font-family:var(--serif);font-size:19px;font-weight:600;line-height:1.4}
 .au-card .cnt{font-family:var(--mono);font-size:11.5px;color:var(--gold);white-space:nowrap;padding-top:4px}
-.au-card .areg{font-family:var(--mono);font-size:10.5px;color:var(--dim-2);letter-spacing:.1em;margin-top:6px}
 .au-card .aspines{margin-top:16px}
 .aspines{display:flex;align-items:flex-end;gap:10px;margin-top:18px;min-height:118px}
 .ms{display:flex;flex-direction:column;align-items:center;gap:6px}
@@ -369,8 +419,8 @@
     <div class="hero-count"><span class="n" id="coverN">14</span><span class="u">本</span><span class="film-tag">读过的书</span></div>
 <div id="bkWrap" data-mode="shelf">
       <div class="tv-stage">
-        <!-- 电脑端专属（≤760px 整体隐藏，手机只看下面的书单表格）：导语 + 模式切换 + 立体书架。
-             全部由脚本按 DATA.books 生成（搜「立体书架」）。下面的 .bk-rows 是 rebuild.py 按缩进定位的，不要改它的缩进 -->
+        <!-- 导语 + 模式切换 + 立体书架：电脑 / 手机都显示（手机端每层 6–7 本、按本数自动叠层）
+             书脊、热区、卡片全部由脚本按 DATA.books 生成（搜「立体书架」）。下面的 .bk-rows 是手写的书单，改书要两处一起补 -->
         <div class="bk-focus-only bk-top">
           <p class="bk-lede" id="bkLede"></p>
           <div class="bk-modebar">
@@ -388,8 +438,7 @@
             <div class="shelf-scale" id="shelfScale">
               <div class="shelf-scene" id="shelfScene">
                 <div class="shelf-stage" id="shelfStage">
-                  <div class="plank"><div class="plank-top"></div><div class="plank-face"></div></div>
-                  <div class="plank-glow"></div>
+                  <div class="planks" id="shelfPlanks"></div>
                   <div class="float-shadow" id="floatShadow"></div>
                   <div class="slots" id="shelfSlots"></div>
                 </div>
@@ -544,7 +593,7 @@
 
 <script>
 /* ================= 2026 书籍报告 ================= */
-const DATA = {"meta":{"year":2026,"n":138,"tv":6,"shorts":2,"first":"2026-01-02","last":"2026-11-22","activeDays":102,"chars":36686,"avgChars":265.8,"rated":138,"avgMine":3.76,"avgDb":7.84,"five":48,"one":8,"fiveRate":34.8,"late":50,"lateShare":36.2,"avgFilmYear":2006.0,"oldest":1935,"n26":22,"n26Rate":15.9,"avg26":3.59,"avgOld":3.79},"hours":[19,8,11,11,1,2,1,3,2,6,5,4,2,3,9,4,3,9,1,4,1,13,9,7],"ratings":[{"s":5,"n":48},{"s":4,"n":40},{"s":3,"n":27},{"s":2,"n":15},{"s":1,"n":8}],"countries":[{"name":"美国","n":38},{"name":"中国大陆","n":21},{"name":"法国","n":17},{"name":"中国香港","n":11},{"name":"英国","n":11},{"name":"韩国","n":10},{"name":"中国台湾","n":4},{"name":"匈牙利","n":3},{"name":"奥地利","n":3},{"name":"比利时","n":3},{"name":"西班牙","n":3},{"name":"德国","n":2},{"name":"挪威","n":2},{"name":"罗马尼亚","n":2},{"name":"苏联","n":2},{"name":"伊拉克","n":1},{"name":"伊朗","n":1},{"name":"意大利","n":1},{"name":"拉脱维亚","n":1},{"name":"日本","n":1},{"name":"芬兰","n":1}],"continents":[{"name":"亚洲","n":49,"pct":35.5},{"name":"欧洲","n":51,"pct":37.0},{"name":"北美","n":38,"pct":27.5}],"decades":[{"name":"≤1960","n":19},{"name":"1960s","n":1},{"name":"1970s","n":1},{"name":"1980s","n":3},{"name":"1990s","n":9},{"name":"2000s","n":22},{"name":"2010s","n":21},{"name":"2020–25","n":40},{"name":"2026","n":22}],"directors":[{"name":"阿尔弗雷德·希区柯克","region":"英国 / 美国","count":6,"avg":3.8,"films":[{"t":"西北偏北","y":"1959","r":5,"db":8.3,"d":"2026-06-02"},{"t":"贵妇失踪记","y":"1938","r":5,"db":8.1,"d":"2026-06-21"},{"t":"史密斯夫妇","y":"1941","r":2,"db":6.8,"d":"2026-06-21"},{"t":"三十九级台阶","y":"1935","r":3,"db":7.7,"d":"2026-06-21"},{"t":"电话谋杀案","y":"1954","r":4,"db":8.9,"d":"2026-10-11"},{"t":"火车怪客","y":"1951","r":4,"db":8.1,"d":"2026-11-13"}]},{"name":"比利·怀尔德","region":"奥匈帝国 / 美国","count":4,"avg":4.5,"films":[{"t":"桃色公寓","y":"1960","r":5,"db":8.9,"d":"2026-04-13"},{"t":"热情如火","y":"1959","r":3,"db":8.9,"d":"2026-06-23"},{"t":"双重赔偿","y":"1944","r":5,"db":8.5,"d":"2026-06-25"},{"t":"倒扣的王牌","y":"1951","r":5,"db":8.7,"d":"2026-06-26"}]},{"name":"弗朗索瓦·欧容","region":"法国","count":4,"avg":4.5,"films":[{"t":"秋日何时来","y":"2024","r":4,"db":8.1,"d":"2026-07-15"},{"t":"泳池情杀案","y":"2003","r":5,"db":7.4,"d":"2026-07-15"},{"t":"登堂入室","y":"2012","r":5,"db":8.5,"d":"2026-07-16"},{"t":"八美图","y":"2002","r":4,"db":7.7,"d":"2026-10-14"}]},{"name":"丹尼斯·维伦纽瓦","region":"加拿大","count":4,"avg":4.0,"films":[{"t":"降临","y":"2016","r":3,"db":7.8,"d":"2026-06-18"},{"t":"银翼杀手2049","y":"2017","r":5,"db":8.3,"d":"2026-08-16"},{"t":"沙丘","y":"2021","r":4,"db":7.7,"d":"2026-08-20"},{"t":"沙丘2","y":"2024","r":4,"db":8.1,"d":"2026-08-24"}]},{"name":"王家卫","region":"中国香港","count":3,"avg":5.0,"films":[{"t":"春光乍泄","y":"1997","r":5,"db":9.0,"d":"2026-01-02"},{"t":"重庆森林","y":"1994","r":5,"db":8.8,"d":"2026-06-10"},{"t":"堕落天使","y":"1995","r":5,"db":8.3,"d":"2026-07-17"}]},{"name":"伊尔蒂科·茵叶蒂","region":"匈牙利","count":3,"avg":4.3,"films":[{"t":"肉与灵","y":"2017","r":5,"db":7.6,"d":"2026-05-01"},{"t":"吾妻之话","y":"2021","r":3,"db":6.5,"d":"2026-07-13"},{"t":"寂静的朋友","y":"2025","r":5,"db":7.8,"d":"2026-07-26"}]},{"name":"朴赞郁","region":"韩国","count":3,"avg":4.0,"films":[{"t":"分手的决心","y":"2022","r":5,"db":7.6,"d":"2026-06-10"},{"t":"蝙蝠","y":"2009","r":4,"db":7.5,"d":"2026-06-21"},{"t":"亲切的金子","y":"2005","r":3,"db":7.6,"d":"2026-06-24"}]},{"name":"卢卡斯·德霍特","region":"比利时","count":3,"avg":3.3,"films":[{"t":"亲密","y":"2022","r":4,"db":8.1,"d":"2026-06-17"},{"t":"女孩","y":"2018","r":4,"db":8.1,"d":"2026-06-18"},{"t":"懦夫","y":"2026","r":2,"db":7.5,"d":"2026-11-15"}]},{"name":"张艺谋","region":"中国大陆","count":3,"avg":1.3,"films":[{"t":"第二十条","y":"2024","r":1,"db":7.5,"d":"2026-01-23"},{"t":"悬崖之上","y":"2021","r":2,"db":7.3,"d":"2026-03-22"},{"t":"惊蛰无声","y":"2026","r":1,"db":5.7,"d":"2026-06-02"}]}],"series":[{"name":"哈利·波特","total":8,"n":6,"lastYear":2,"done":true,"avg":3.7,"films":[{"t":"哈利·波特与阿兹卡班的囚徒","y":"2004","r":5,"d":"2026-02-21"},{"t":"哈利·波特与火焰杯","y":"2005","r":3,"d":"2026-02-23"},{"t":"哈利·波特与凤凰社","y":"2007","r":4,"d":"2026-02-23"},{"t":"哈利·波特与混血王子","y":"2009","r":2,"d":"2026-02-24"},{"t":"哈利·波特与死亡圣器(上)","y":"2010","r":4,"d":"2026-03-21"},{"t":"哈利·波特与死亡圣器(下)","y":"2011","r":4,"d":"2026-03-21"}]},{"name":"黑客帝国","total":4,"n":4,"lastYear":0,"done":true,"avg":4.2,"films":[{"t":"黑客帝国","y":"1999","r":5,"d":"2026-01-12"},{"t":"黑客帝国2：重装上阵","y":"2003","r":5,"d":"2026-01-17"},{"t":"黑客帝国3：矩阵革命","y":"2003","r":4,"d":"2026-01-25"},{"t":"黑客帝国：矩阵重启","y":"2021","r":3,"d":"2026-08-21"}]},{"name":"无间道","total":3,"n":3,"lastYear":0,"done":true,"avg":4.7,"films":[{"t":"无间道","y":"2002","r":5,"d":"2026-02-12"},{"t":"无间道2","y":"2003","r":5,"d":"2026-02-18"},{"t":"无间道3：终极无间","y":"2003","r":4,"d":"2026-06-02"}]},{"name":"沙丘","total":3,"n":2,"lastYear":0,"done":false,"avg":4.0,"films":[{"t":"沙丘","y":"2021","r":4,"d":"2026-08-20"},{"t":"沙丘2","y":"2024","r":4,"d":"2026-08-24"}]},{"name":"银翼杀手","total":2,"n":2,"lastYear":0,"done":true,"avg":5.0,"films":[{"t":"银翼杀手","y":"1982","r":5,"d":"2026-08-05"},{"t":"银翼杀手2049","y":"2017","r":5,"d":"2026-08-16"}]},{"name":"蓝白红三部曲","total":3,"n":1,"lastYear":0,"done":false,"avg":4.0,"films":[{"t":"蓝白红三部曲之白","y":"1994","r":4,"d":"2026-09-06"}]}],"f26":[{"t":"惊蛰无声","dir":"张艺谋","cast":"易烊千玺/朱一龙/宋佳","month":6,"date":"2026-06-02","r":1,"db":5.7,"tags":""},{"t":"熊出没·年年有熊","dir":"林汇达","cast":"","month":6,"date":"2026-06-02","r":2,"db":6.4,"tags":"动画片"},{"t":"给阿嬷的情书","dir":"蓝鸿春","cast":"李思潼/王彦桐/吴少卿","month":6,"date":"2026-06-21","r":3,"db":9.3,"tags":"院线观影"},{"t":"告知信","dir":"伊尔凯尔·恰塔克","cast":"优素福·阿昆/埃姆雷·巴卡尔/坦苏·比切尔","month":7,"date":"2026-07-11","r":4,"db":6.8,"tags":"金熊"},{"t":"苦涩的圣诞节","dir":"佩德罗·阿莫多瓦","cast":"巴巴拉·莱涅/莱昂纳多·斯巴拉格利亚/艾塔娜·桑切斯-希洪","month":7,"date":"2026-07-12","r":5,"db":6.7,"tags":"元电影"},{"t":"她回来的那天","dir":"洪常秀","cast":"宋宣美/赵伦嬉/朴美素","month":7,"date":"2026-07-12","r":5,"db":7.4,"tags":""},{"t":"女仆日记","dir":"拉杜·裘德","cast":"安娜·杜米特拉斯库/梅兰尼·蒂埃里/樊尚·马凯涅","month":8,"date":"2026-08-18","r":5,"db":7.3,"tags":""},{"t":"欢迎来龙餐馆","dir":"文牧野","cast":"沈腾/蒋奇明/奥马尔·谢里夫","month":8,"date":"2026-08-20","r":4,"db":8.7,"tags":"院线观影"},{"t":"罗斯","dir":"马库斯·施莱泽","cast":"桑德拉·惠勒/卡洛·布劳恩/玛丽莎·格罗瓦尔德","month":9,"date":"2026-09-21","r":5,"db":8.5,"tags":""},{"t":"年会不能停！2","dir":"董润年","cast":"张若昀/白客/高叶","month":9,"date":"2026-09-24","r":2,"db":6.1,"tags":""},{"t":"希望","dir":"罗泓轸","cast":"黄政民/赵寅成/郑好娟","month":10,"date":"2026-10-18","r":4,"db":5.5,"tags":""},{"t":"突如其来","dir":"滨口龙介","cast":"维尔日妮·埃菲拉/冈本多绪/长塚京三","month":10,"date":"2026-10-24","r":4,"db":7.7,"tags":""},{"t":"黑球","dir":"哈维尔·安布罗希","cast":"吉塔里卡·德拉富恩特/米格尔·贝尔纳尔德阿尤/米洛·基菲斯","month":10,"date":"2026-10-30","r":4,"db":8.7,"tags":""},{"t":"盒子里的羊","dir":"是枝裕和","cast":"绫濑遥/大悟/桑木里梦","month":10,"date":"2026-10-30","r":2,"db":5.8,"tags":""},{"t":"行走之人","dir":"玛丽恩·阿特兰","cast":"科拉·奎尼亚/苏珊·热朗/米提亚·卡佩利耶-欧达","month":10,"date":"2026-10-31","r":4,"db":null,"tags":""},{"t":"可能的爱","dir":"李沧东","cast":"全度妍/薛景求/赵寅成","month":11,"date":"2026-11-07","r":5,"db":8.6,"tags":"元电影"},{"t":"每时每刻","dir":"桑德拉·沃纳尔","cast":"比吉特·米尼希迈尔/洛特·希林·凯林/特里斯坦·洛佩斯","month":11,"date":"2026-11-11","r":4,"db":7.4,"tags":""},{"t":"黄金时段","dir":"兰斯·奥本海姆","cast":"罗伯特·帕丁森/梅里特·韦弗/斯凯勒·吉桑多","month":11,"date":"2026-11-14","r":3,"db":6.2,"tags":""},{"t":"懦夫","dir":"卢卡斯·德霍特","cast":"伊曼纽尔·马基亚/瓦伦丁·坎帕涅/威廉·德·史瑞佛","month":11,"date":"2026-11-15","r":2,"db":7.5,"tags":""},{"t":"温柔的怪物","dir":"玛丽·克鲁泽","cast":"蕾雅·赛杜/凯瑟琳·德纳芙/耶拉·哈泽","month":11,"date":"2026-11-21","r":2,"db":5.8,"tags":""},{"t":"平行故事","dir":"阿斯加·法哈蒂","cast":"伊莎贝尔·于佩尔/维尔日妮·埃菲拉/文森特·卡索","month":11,"date":"2026-11-21","r":4,"db":6.5,"tags":""},{"t":"附带伤亡","dir":"尤瓦尔·亚伯拉罕","cast":"尤瓦尔·亚伯拉罕","month":11,"date":"2026-11-22","r":5,"db":8.5,"tags":"纪录片"}],"months26":[{"m":1,"n":0},{"m":2,"n":0},{"m":3,"n":0},{"m":4,"n":0},{"m":5,"n":0},{"m":6,"n":3},{"m":7,"n":3},{"m":8,"n":2},{"m":9,"n":2},{"m":10,"n":5},{"m":11,"n":7},{"m":12,"n":0}],"months":[{"m":1,"n":8,"five":[{"t":"春光乍泄","y":"1997","dir":"王家卫"},{"t":"黑客帝国","y":"1999","dir":"莉莉·沃卓斯基"},{"t":"黑客帝国2：重装上阵","y":"2003","dir":"拉娜·沃卓斯基"},{"t":"性梦爱三部曲：梦","y":"2024","dir":"达格·约翰·豪格鲁德"}]},{"m":2,"n":13,"five":[{"t":"阮玲玉","y":"1991","dir":"关锦鹏"},{"t":"无间道","y":"2002","dir":"刘伟强"},{"t":"无间道2","y":"2003","dir":"刘伟强"},{"t":"甜蜜蜜","y":"1996","dir":"陈可辛"},{"t":"你逃我也逃","y":"1942","dir":"恩斯特·刘别谦"},{"t":"哈利·波特与阿兹卡班的囚徒","y":"2004","dir":"阿方索·卡隆"}]},{"m":3,"n":8,"five":[]},{"m":4,"n":6,"five":[{"t":"桃色公寓","y":"1960","dir":"比利·怀尔德"},{"t":"四百击","y":"1959","dir":"弗朗索瓦·特吕弗"},{"t":"小城之春","y":"1948","dir":"费穆"}]},{"m":5,"n":3,"five":[{"t":"肉与灵","y":"2017","dir":"伊尔蒂科·茵叶蒂"},{"t":"乡愁","y":"1983","dir":"安德烈·塔可夫斯基"},{"t":"偷自行车的人","y":"1948","dir":"维托里奥·德西卡"}]},{"m":6,"n":40,"five":[{"t":"西北偏北","y":"1959","dir":"阿尔弗雷德·希区柯克"},{"t":"机器人总动员","y":"2008","dir":"安德鲁·斯坦顿"},{"t":"重庆森林","y":"1994","dir":"王家卫"},{"t":"分手的决心","y":"2022","dir":"朴赞郁"},{"t":"四月三周两天","y":"2007","dir":"克里斯蒂安·蒙吉"},{"t":"阿诺拉","y":"2024","dir":"肖恩·贝克"},{"t":"无名","y":"2023","dir":"程耳"},{"t":"贵妇失踪记","y":"1938","dir":"阿尔弗雷德·希区柯克"},{"t":"何处是我朋友的家","y":"1987","dir":"阿巴斯·基亚罗斯塔米"},{"t":"双重赔偿","y":"1944","dir":"比利·怀尔德"},{"t":"倒扣的王牌","y":"1951","dir":"比利·怀尔德"},{"t":"杀手","y":"1956","dir":"斯坦利·库布里克"}]},{"m":7,"n":27,"five":[{"t":"地球最后的夜晚","y":"2018","dir":"毕赣"},{"t":"苦涩的圣诞节","y":"2026","dir":"佩德罗·阿莫多瓦"},{"t":"她回来的那天","y":"2026","dir":"洪常秀"},{"t":"巴黎夏日","y":"2025","dir":"瓦伦丁·卡迪奇"},{"t":"泳池情杀案","y":"2003","dir":"弗朗索瓦·欧容"},{"t":"登堂入室","y":"2012","dir":"弗朗索瓦·欧容"},{"t":"堕落天使","y":"1995","dir":"王家卫"},{"t":"猫猫的奇幻漂流","y":"2024","dir":"金兹·兹巴洛迪斯"},{"t":"寂静的朋友","y":"2025","dir":"伊尔蒂科·茵叶蒂"},{"t":"色，戒","y":"2007","dir":"李安"}]},{"m":8,"n":7,"five":[{"t":"银翼杀手","y":"1982","dir":"雷德利·斯科特"},{"t":"银翼杀手2049","y":"2017","dir":"丹尼斯·维伦纽瓦"},{"t":"女仆日记","y":"2026","dir":"拉杜·裘德"}]},{"m":9,"n":4,"five":[{"t":"燃烧","y":"2018","dir":"李沧东"},{"t":"罗斯","y":"2026","dir":"马库斯·施莱泽"}]},{"m":10,"n":8,"five":[{"t":"雁南飞","y":"1957","dir":"米哈伊尔·卡拉托佐夫"}]},{"m":11,"n":14,"five":[{"t":"第三人","y":"1949","dir":"卡罗尔·里德"},{"t":"可能的爱","y":"2026","dir":"李沧东"},{"t":"侠女","y":"1970","dir":"胡金铨"},{"t":"附带伤亡","y":"2026","dir":"尤瓦尔·亚伯拉罕"}]},{"m":12,"n":0,"five":[]}],"tags":[{"name":"爱情","n":10},{"name":"动画片","n":7},{"name":"FilmNoir","n":6},{"name":"金棕榈/戛纳最高奖","n":5},{"name":"奥斯卡BP","n":4},{"name":"元电影","n":3},{"name":"金熊","n":3},{"name":"Neo-noir","n":2},{"name":"院线观影","n":2},{"name":"DCU","n":1},{"name":"MCU","n":1},{"name":"吸血鬼","n":1},{"name":"歌舞片","n":1},{"name":"武侠","n":1},{"name":"纪录片","n":1},{"name":"金狮","n":1}],"hotwords":[{"w":"现实与虚构","n":24},{"w":"身份","n":16},{"w":"爱情","n":12},{"w":"女性","n":11},{"w":"历史","n":10},{"w":"死亡","n":10},{"w":"调度","n":10},{"w":"长镜头","n":10},{"w":"家庭","n":9},{"w":"身体","n":9},{"w":"凝视","n":8},{"w":"政治","n":8},{"w":"暴力","n":8},{"w":"留白","n":8},{"w":"亲密","n":7},{"w":"光影","n":7},{"w":"孤独","n":7},{"w":"欲望","n":7},{"w":"创伤","n":6},{"w":"现实主义","n":6},{"w":"男性","n":6},{"w":"底层","n":5},{"w":"战争","n":5},{"w":"时代","n":5},{"w":"构图","n":5},{"w":"自由","n":5},{"w":"荒诞","n":5},{"w":"阶级","n":5},{"w":"宗教","n":4},{"w":"少年","n":4},{"w":"性别","n":4},{"w":"戏中戏","n":4},{"w":"手持","n":4},{"w":"救赎","n":4},{"w":"新浪潮","n":4},{"w":"权力","n":4},{"w":"父权","n":4},{"w":"特写","n":4},{"w":"蒙太奇","n":4},{"w":"记忆","n":4},{"w":"信仰","n":3},{"w":"元电影","n":3},{"w":"后现代","n":3},{"w":"宿命","n":3},{"w":"景深","n":3},{"w":"类型片","n":3},{"w":"表现主义","n":3},{"w":"视听语言","n":3},{"w":"青春","n":3},{"w":"声音设计","n":2},{"w":"存在主义","n":2},{"w":"抽帧","n":2},{"w":"非线性","n":2},{"w":"黑色电影","n":2}],"books":[{"t":"平面国","a":"[英]埃德温·A·艾勃特","pub":"上海文化出版社","py":2020,"isbn":"978-7-5535-2064-3","db":9.2,"r":5,"d":"2026-03-15","tr":"鲁冬旭","g":"科幻","w":"电子书","pg":160,"est":true,"note":"按常见版本篇幅估","dur":"3 小时 18 分","card":true},{"t":"五只小猪","a":"[英]阿加莎·克里斯蒂","pub":"新星出版社","py":2025,"isbn":"978-7-5133-6131-6","db":8.4,"r":5,"d":"2026-06-20","tr":"周力","g":"本格推理","w":"购买实体书","pg":298,"est":false,"note":"","dur":"","card":true},{"t":"牙医谋杀案","a":"[英]阿加莎·克里斯蒂","pub":"新星出版社","py":2023,"isbn":"978-7-5133-3945-2","db":7.9,"r":3,"d":"2026-07-05","tr":"赵飞","g":"本格推理","w":"购买实体书","pg":226,"est":false,"note":"","dur":"","card":true},{"t":"三口棺材","a":"[美]约翰·迪克森·卡尔","pub":"新星出版社","py":2024,"isbn":"978-7-5133-5664-0","db":8.1,"r":3,"d":"2026-07-09","tr":"辛可加","g":"本格推理","w":"购买实体书","pg":321,"est":false,"note":"","dur":"","card":true},{"t":"犹大之窗","a":"[美]约翰·迪克森·卡尔","pub":"新星出版社","py":2019,"isbn":"978-7-5133-3433-4","db":8.2,"r":5,"d":"2026-07-14","tr":"蔡妙","g":"本格推理","w":"购买实体书","pg":267,"est":false,"note":"","dur":"","card":true},{"t":"风声","a":"麦家","pub":"上海文艺出版社","py":2020,"isbn":"978-7-5321-7772-1","db":8.4,"r":null,"d":"2026-07-19","tr":"","g":"谍战","w":"电子书","pg":320,"est":true,"note":"按常见版本篇幅估","dur":"6 小时 15 分","card":true},{"t":"花样年华","a":"[英]汤尼·雷恩","pub":"广东人民出版社","py":2026,"isbn":"978-7-218-19003-7","db":8.1,"r":null,"d":"2026-07-20","tr":"侯弋飏","g":"电影类","w":"购买实体书","pg":157,"est":false,"note":"","dur":"","card":true},{"t":"法兰西粉末之谜","a":"[美]埃勒里·奎因","pub":"江苏凤凰文艺出版社","py":2026,"isbn":"978-7-5808-0451-8","db":7.8,"r":5,"d":"2026-07-24","tr":"王林园","g":"本格推理","w":"购买实体书","pg":363,"est":false,"note":"","dur":"","card":true},{"t":"长夜难明","a":"紫金陈","pub":"湖南文艺出版社","py":2023,"isbn":"978-7-5726-1197-1","db":8.5,"r":4,"d":"2026-07-28","tr":"","g":"社会派","w":"电子书","pg":336,"est":true,"note":"按常见版本篇幅估","dur":"5 小时 9 分","card":true},{"t":"绝叫","a":"[日]叶真中显","pub":"北京联合出版公司","py":2020,"isbn":"978-7-5596-4118-2","db":8.9,"r":5,"d":"2026-08-17","tr":"林佩瑾","g":"社会派","w":"其他","pg":427,"est":false,"note":"","dur":"","card":false},{"t":"钟表馆事件","a":"[日]绫辻行人","pub":"新星出版社","py":2016,"isbn":"978-7-5133-2095-5","db":8.3,"r":5,"d":"2026-10-23","tr":"刘羽阳","g":"新本格推理","w":"校图书馆","pg":440,"est":false,"note":"","dur":"","card":true},{"t":"阳光下的罪恶","a":"[英]阿加莎·克里斯蒂","pub":"新星出版社","py":2025,"isbn":"978-7-5133-6067-8","db":8.0,"r":4,"d":"2026-11-04","tr":"于婉青","g":"本格推理","w":"校图书馆","pg":256,"est":false,"note":"","dur":"","card":true},{"t":"希腊棺材之谜","a":"[美]埃勒里·奎因","pub":"新星出版社","py":2017,"isbn":"978-7-5133-2471-7","db":8.0,"r":5,"d":"2026-11-25","tr":"王敬之","g":"本格推理","w":"校图书馆","pg":489,"est":false,"note":"","dur":"","card":true},{"t":"人性记录","a":"[英]阿加莎·克里斯蒂","pub":"人民文学出版社","py":"2006-5","isbn":"","db":null,"r":null,"d":"","tr":"王敬慧","g":"本格推理","w":"校图书馆","pg":284,"est":false,"note":"","dur":"","card":true}]};
+const DATA = {"books":[{"t":"平面国","a":"[英]埃德温·A·艾勃特","pub":"上海文化出版社","py":2020,"isbn":"978-7-5535-2064-3","db":9.2,"r":5,"d":"2026-03-15","tr":"鲁冬旭","g":"科幻","w":"电子书","pg":160,"est":true,"note":"按常见版本篇幅估","dur":"3 小时 18 分","card":true},{"t":"五只小猪","a":"[英]阿加莎·克里斯蒂","pub":"新星出版社","py":2025,"isbn":"978-7-5133-6131-6","db":8.4,"r":5,"d":"2026-06-20","tr":"周力","g":"本格推理","w":"购买实体书","pg":298,"est":false,"note":"","dur":"","card":true},{"t":"牙医谋杀案","a":"[英]阿加莎·克里斯蒂","pub":"新星出版社","py":2023,"isbn":"978-7-5133-3945-2","db":7.9,"r":3,"d":"2026-07-05","tr":"赵飞","g":"本格推理","w":"购买实体书","pg":226,"est":false,"note":"","dur":"","card":true},{"t":"三口棺材","a":"[美]约翰·迪克森·卡尔","pub":"新星出版社","py":2024,"isbn":"978-7-5133-5664-0","db":8.1,"r":3,"d":"2026-07-09","tr":"辛可加","g":"本格推理","w":"购买实体书","pg":321,"est":false,"note":"","dur":"","card":true},{"t":"犹大之窗","a":"[美]约翰·迪克森·卡尔","pub":"新星出版社","py":2019,"isbn":"978-7-5133-3433-4","db":8.2,"r":5,"d":"2026-07-14","tr":"蔡妙","g":"本格推理","w":"购买实体书","pg":267,"est":false,"note":"","dur":"","card":true},{"t":"风声","a":"麦家","pub":"上海文艺出版社","py":2020,"isbn":"978-7-5321-7772-1","db":8.4,"r":null,"d":"2026-07-19","tr":"","g":"谍战","w":"电子书","pg":320,"est":true,"note":"按常见版本篇幅估","dur":"6 小时 15 分","card":true},{"t":"花样年华","a":"[英]汤尼·雷恩","pub":"广东人民出版社","py":2026,"isbn":"978-7-218-19003-7","db":8.1,"r":null,"d":"2026-07-20","tr":"侯弋飏","g":"电影类","w":"购买实体书","pg":157,"est":false,"note":"","dur":"","card":true},{"t":"法兰西粉末之谜","a":"[美]埃勒里·奎因","pub":"江苏凤凰文艺出版社","py":2026,"isbn":"978-7-5808-0451-8","db":7.8,"r":5,"d":"2026-07-24","tr":"王林园","g":"本格推理","w":"购买实体书","pg":363,"est":false,"note":"","dur":"","card":true},{"t":"长夜难明","a":"紫金陈","pub":"湖南文艺出版社","py":2023,"isbn":"978-7-5726-1197-1","db":8.5,"r":4,"d":"2026-07-28","tr":"","g":"社会派","w":"电子书","pg":336,"est":true,"note":"按常见版本篇幅估","dur":"5 小时 9 分","card":true},{"t":"绝叫","a":"[日]叶真中显","pub":"北京联合出版公司","py":2020,"isbn":"978-7-5596-4118-2","db":8.9,"r":5,"d":"2026-08-17","tr":"林佩瑾","g":"社会派","w":"其他","pg":427,"est":false,"note":"","dur":"","card":false},{"t":"钟表馆事件","a":"[日]绫辻行人","pub":"新星出版社","py":2016,"isbn":"978-7-5133-2095-5","db":8.3,"r":5,"d":"2026-10-23","tr":"刘羽阳","g":"新本格推理","w":"校图书馆","pg":440,"est":false,"note":"","dur":"","card":true},{"t":"阳光下的罪恶","a":"[英]阿加莎·克里斯蒂","pub":"新星出版社","py":2025,"isbn":"978-7-5133-6067-8","db":8,"r":4,"d":"2026-11-04","tr":"于婉青","g":"本格推理","w":"校图书馆","pg":256,"est":false,"note":"","dur":"","card":true},{"t":"希腊棺材之谜","a":"[美]埃勒里·奎因","pub":"新星出版社","py":2017,"isbn":"978-7-5133-2471-7","db":8,"r":5,"d":"2026-11-25","tr":"王敬之","g":"本格推理","w":"校图书馆","pg":489,"est":false,"note":"","dur":"","card":true},{"t":"人性记录","a":"[英]阿加莎·克里斯蒂","pub":"人民文学出版社","py":"2006-5","isbn":"","db":null,"r":null,"d":"","tr":"王敬慧","g":"本格推理","w":"校图书馆","pg":284,"est":false,"note":"","dur":"","card":true}]};
 /* ---------- 小工具 ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -560,15 +609,18 @@ function showTip(html, x, y) {
   tip.style.left = left + 'px'; tip.style.top = top + 'px';
 }
 
-/* ---------- 立体书架：全部按 DATA.books 现算现画，换表后对两个文件各跑一遍 rebuild.py 即可 ---------- */
-(function bookShelf() {
+/* ---------- 立体书架：全部按 DATA.books 现算现画，加一本书就补一条数据 + 一行表格 ---------- */
+(() => {
   const wrap = document.getElementById('bkWrap');
   const BK = (DATA.books || []).slice();
   if (!wrap || !BK.length) return;
   wrap.dataset.mode = 'shelf';
 
-  /* 设计尺寸与留白都在 1120×480 的「设计坐标」里算，窄屏整体等比缩放（见 fit） */
-  const DW = 1120, DH = 480, GAP = 6, MG = 12, SAFE_L = 84, SAFE_R = 56;
+  /* 设计坐标：电脑端固定 1120×480 的坐标系（窄屏整体等比缩放）；
+     手机端改用「按屏宽现算」的坐标系——每层 6–7 本、按本数自动叠层（见 layout） */
+  const DW_REF = 1120, DH_REF = 480;
+  let DW = DW_REF, DH = DH_REF, K = 1, COMPACT = false, ROWS = 1, ROWH = DH_REF, FOOT = 63;
+  let GAP = 6, MG = 12, SAFE_L = 84, SAFE_R = 56, PH = 16;
   /* 书脊配色：按类型分色系，同一类型里按读完先后取色；GCOL = 类型色（书脚色条 / 环 / 图例共用） */
   const PAL = {
     '本格推理': ['#9a2f2f', '#1f3b57', '#2f5847', '#b07a1e', '#5b1b2b', '#2a5a66', '#7a3a1f', '#3d3a6b'],
@@ -588,49 +640,61 @@ function showTip(html, x, y) {
   /* 每本书的尺寸与配色。
      书高 = 书名 + 作者名的总字数，但压窄差距、整体不要太参差：
        H = 262 + (字数 − 最少字数) × 9.5（现在最少 4 字《风声》→ 262，最多 14 字《阳光下的罪恶》→ 357）。
-     书脊厚薄 = 页数（DATA 里的 pg，来自 rebuild.py 的 PAGES 表）：W = 20 + 页数 × 0.105，夹在 24–70 之间。
+     书脊厚薄 = 页数（DATA 里的 pg，手录的页数）：W = 20 + 页数 × 0.105，夹在 24–70 之间。
      pg 为空 = 页数不写，卡片上不出这一行，书脊按中等厚度 48 画；
      card===false = 页数只拿去算厚度、卡片上不写（《绝叫》427 页就是这种）。
      w === '电子书' = 卡片上不写页数（那是按纸书篇幅估的），只写 dur；
      dur = 阅读时长（如 "6 小时"）；非电子书填了就在页数下面多一行。
      est = true 的是估的纸书页数，卡片上显示「约 N 页（估）」 */
   const who = x => (x.nat ? '[' + x.nat + ']' : '') + x.short;   // 书架侧：国籍前缀 + 作者名（书高仍按纯名字算）
+  /* 竖排用的作者串：ASCII 方括号在竖排里会被旋转、看起来像另起一列。
+     这里把「[英]」整段包进 .vcm（text-combine-upright:all），让它压成一个字格宽的横排小块，
+     方括号与国名在同一横排里，不再上下各占一格 */
+  const vwho = x => (x.nat
+    ? '<span class="vcm">[' + esc(x.nat) + ']</span>' + esc(x.short)
+    : esc(x.short));
   const N = BK.length;
   const gi = {};
-  const LMIN = Math.min(...BK.map(b => len(b.t) + len(String(b.a || '').replace(/^\[[^\]]*\]/, '').trim())));   // 最少的「书名 + 作者名」字数
   BK.forEach(b => {
-    const n = len(b.t);
     b.short = String(b.a || '').replace(/^\[[^\]]*\]/, '').trim();
     b.nat = (String(b.a || '').match(/^\[([^\]]*)\]/) || [, ''])[1];
-    b.H = Math.round(262 + (n + len(b.short) - LMIN) * 9.5);         // 书高：书名 + 作者名总字数（差距压窄）
-    b.W = b.pg ? Math.max(24, Math.min(70, Math.round(20 + b.pg * .105))) : 48;   // 书脊宽（= 厚度）
-    b.D = Math.round(b.H * .72);                                      // 封面宽（= 进深）
     if (!GCOL.hasOwnProperty(b.g)) b.g = '其他';
     b.c = PAL[b.g][(gi[b.g] = gi[b.g] || 0) % PAL[b.g].length]; gi[b.g]++;
     b.light = lum(b.c) > .6;
-    b.fs = b.W >= 62 ? 17 : b.W >= 54 ? 16 : 15;
-    b.cfs = n >= 6 ? 21 : n === 5 ? 23 : 26;
   });
+  const LMIN = Math.min(...BK.map(b => len(b.t) + len(b.short)));   // 最少的「书名 + 作者名」字数
+  /* 尺寸每次排版重算（不能被上一次缩放的结果污染）：
+     电脑端 H = 262 + (字数 − 最少字数) × 9.5，书脊宽 = 20 + 页数 × 0.105（夹 24–70）；
+     手机端整体按 .58 缩，书脊厚按页数 × .05（夹 22–46），让一层 7 本刚好排满屏宽 */
+  function sizeBooks(compact) {
+    BK.forEach((b, i) => {
+      const n = len(b.t);
+      b.idx = i;
+      b.H = Math.round((262 + (n + len(b.short) - LMIN) * 9.5) * (compact ? .58 : 1));
+      const w0 = b.pg ? 20 + b.pg * (compact ? .05 : .105) : 48;
+      b.W = Math.max(compact ? 22 : 24, Math.min(compact ? 46 : 70, Math.round(w0)));
+      b.D = Math.round(b.H * (compact ? .7 : .72));
+      if (compact) b.D = Math.max(b.D, 116);      // 手机端页宽下限：短书名的书（《风声》）页宽只有 90 出头，书目卡排不下
+      b.x = 0;                                   // 真正的位置在 layout() 里按层排
+    });
+  }
+  sizeBooks(false);
   const HMIN = Math.min(...BK.map(b => b.H)), HMAX = Math.max(...BK.map(b => b.H));
-  const sumW = () => BK.reduce((a, b) => a + b.W, 0);
-  const maxW = DW - 96 - GAP * (N - 1);
-  if (sumW() > maxW) { const k = maxW / sumW(); BK.forEach(b => { b.W = Math.max(30, Math.round(b.W * k)); }); }
-  let acc = (DW - sumW() - GAP * (N - 1)) / 2;
-  BK.forEach(b => { b.x = acc; acc += b.W + GAP; });                 // 闭架时书脊左沿
 
   /* ---- 立体书架 ---- */
   const stage = document.getElementById('shelfStage');
+  const planksBox = document.getElementById('shelfPlanks');
   const slotsBox = document.getElementById('shelfSlots');
   const shadow = document.getElementById('floatShadow');
   slotsBox.innerHTML = BK.map((b, i) => {
     const no = pad2(i + 1);
-    const v = `--x:${b.x + b.W}px;--x0:${b.x + b.W}px;--x1:${b.x + b.W}px;--h:${b.H}px;--d:${b.D}px;--t:${b.W}px;`
-      + `--c:${b.c};--g:${GCOL[b.g]};--fs:${b.fs}px;--cfs:${b.cfs}px;`
+    const v = `--x:0px;--x0:0px;--x1:0px;--h:${b.H}px;--d:${b.D}px;--t:${b.W}px;`
+      + `--c:${b.c};--g:${GCOL[b.g]};--fs:${b.fs || 15}px;--cfs:${b.cfs || 24}px;`
       + `--ink:${b.light ? '#2a2521' : '#efe3c8'};--line:${b.light ? 'rgba(60,48,36,.6)' : 'rgba(214,170,90,.7)'};`
       + `--tsh:${b.light ? 'none' : '0 1px 0 rgba(0,0,0,.3)'};`;
     return `<div class="slot" data-i="${i}" style="${v}">
       <div class="fc b-back"></div>
-      <div class="fc b-spine"><span class="sp-no">${no}</span><span class="sp-rule"></span><span class="sp-t">${esc(b.t)}</span><span class="sp-a">${esc(who(b))}</span></div>
+      <div class="fc b-spine"><span class="sp-no">${no}</span><span class="sp-rule"></span><span class="sp-t">${esc(b.t)}</span><span class="sp-a">${vwho(b)}</span></div>
       <div class="fc b-fore"></div>
       <div class="fc b-top"></div>
       <div class="fc b-page"><div class="pg">
@@ -652,37 +716,61 @@ function showTip(html, x, y) {
       </div></div>
       <div class="b-cover">
         <div class="fc cv-front"><span class="cv-frame"></span><span class="cv-year">${b.py ?? ''}</span><span class="cv-t">${esc(b.t)}</span><span class="cv-a">${esc(b.short)}</span><span class="cv-pub">${esc(b.pub)}</span></div>
-        <div class="fc cv-in"><span class="ci-frame"></span><span class="ci-t">${esc(b.t)}</span><span class="ci-a">${esc(who(b))}</span><span class="ci-p">${esc(b.pub)} · ${b.py ?? ''}</span></div>
+        <div class="fc cv-in"><span class="ci-frame"></span><span class="ci-t">${esc(b.t)}</span><span class="ci-a">${vwho(b)}</span><span class="ci-p">${esc(b.pub)} · ${b.py ?? ''}</span></div>
       </div>
     </div>`;
   }).join('');
   const slots = [...slotsBox.children];
 
-  /* 抽开第 i 本：两侧书各让 s；被点的书转到书脊原位正中。
+  /* 抽开第 i 本：同一层的两侧书各让 s；被点的书转到书脊原位正中。
      最左 / 最右两本要连「掀开的封面」一起算，保证整本都在画面里（出界就往里挪，邻书让不开就停在边上） */
   function layoutOpen(i) {
-    const b = BK[i], D = b.D;
+    const b = BK[i], D = b.D, list = b.rowList, pos = b.rowPos;
     const s = (D + 2 * MG - b.W) / 2;
-    let L = b.x + b.W / 2 - D / 2;                 // 转过来之后书的左沿
     const OV = D * .95;                            // 封面掀开后伸到装订线左侧的宽度
-    if (L - OV < SAFE_L) L = SAFE_L + OV;
-    if (L + D > DW - SAFE_R) L = DW - SAFE_R - D;
-    const cr = BK[N - 1].x + BK[N - 1].W;           // 闭架时整排的右沿
-    BK.forEach((o, j) => { o.px = o.x + o.W; });
+    const PROJ = 1.08;                             // 3D 透视实测：画出来比几何值还大 7–9%（按放大后的宽高都算一次）
+    /* 手机端把翻开这本整体放大/缩小到刚好铺满黑框（transform-origin 在书脚，只往上、往右长），
+       配合页宽下限与折行，书目卡才能完整露出来 */
+    let sc = 1;
+    if (COMPACT) {
+      const spread = PROJ * (D + OV);              // 一整页 + 掀开的封面
+      sc = Math.min(1.75, (DW - 2 * SAFE_L) / spread);
+      /* 放大只往上长：高书的头顶本来离黑框上沿就只剩几像素，按纵向余量再封一次顶（已扣掉手机端 20px 的抬升） */
+      const vcap = (b.ytop - 28) / b.H;
+      sc = Math.max(.78, Math.min(sc, vcap));
+    }
+    const PR = COMPACT ? PROJ : 1;                  // 电脑端不放大，透视余量也不算（保持原来的位置）
+    const eD = sc * PR * D, eOV = sc * PR * OV;     // 画出来实际的左右伸出量
+    let L = b.x + b.W / 2 - eD / 2;                 // 让整本书的视觉中心还落在原位
+    /* 手机端原位放不下（太靠左右）就把整本书居中，两侧留同样的边；电脑端照旧只夹边界 */
+    if (COMPACT && (L - eOV < SAFE_L || L + eD > DW - SAFE_R)) L = (DW - eD - eOV) / 2 + eOV;
+    if (L - eOV < SAFE_L) L = SAFE_L + eOV;
+    if (L + eD > DW - SAFE_R) L = DW - SAFE_R - eD;
+    list.forEach(o => { o.px = o.x + o.W; });
     /* 两侧尽量让到「掀开的封面」外面；让不开就顶到画面边上为止（至少让 s） */
-    if (i > 0) {
-      const sh = Math.min(Math.max(s, BK[i - 1].x + BK[i - 1].W + MG - (L - OV)), Math.max(s, BK[0].x - 14));
-      BK.forEach((o, j) => { if (j < i) o.px -= sh; });
+    if (pos > 0) {
+      const last = list[pos - 1];
+      const want = Math.max(s * sc, last.x + last.W + MG - (L - eOV));  // 想让开多少
+      const room = Math.max(0, list[0].x - 2);                         // 但最多让到第一本贴住书架左沿（书脊别再掉到黑框外）
+      const sh = Math.min(want, room);
+      for (let j = 0; j < pos; j++) list[j].px -= sh;
     }
-    if (i < N - 1) {
-      const sh = Math.min(Math.max(s, L + D + MG - BK[i + 1].x), Math.max(s, DW - SAFE_R - cr));
-      BK.forEach((o, j) => { if (j > i) o.px += sh; });
+    if (pos < list.length - 1) {
+      const cr = list[list.length - 1].x + list[list.length - 1].W;   // 这一层闭架时的右沿
+      const want = Math.max(s * sc, L + eD + MG - list[pos + 1].x);
+      const room = Math.max(0, DW - 2 - cr);                           // 同理：最后一本最多贴到右沿
+      const sh = Math.min(want, room);
+      for (let j = pos + 1; j < list.length; j++) list[j].px += sh;
     }
-    BK.forEach((o, j) => slots[j].style.setProperty('--x', o.px.toFixed(1) + 'px'));
+    /* 兜底：不管让位算成什么，每本书脊都必须留在书架黑框里（右沿 --x，书脊左沿 = --x − 厚度） */
+    list.forEach(o => { o.px = Math.min(Math.max(o.px, 2 + o.W), DW - 2); });
+    list.forEach(o => slots[o.idx].style.setProperty('--x', o.px.toFixed(1) + 'px'));
+    slots[i].style.setProperty('--sc', sc.toFixed(3));
     slots[i].style.setProperty('--x0', (b.x + b.W).toFixed(1) + 'px');
     slots[i].style.setProperty('--x1', L.toFixed(1) + 'px');
-    shadow.style.setProperty('--sx', L.toFixed(1) + 'px');
-    shadow.style.setProperty('--sw', D + 'px');
+    shadow.style.top = (b.ytop - 6) + 'px';
+    shadow.style.setProperty('--sx', (L - eOV).toFixed(1) + 'px');
+    shadow.style.setProperty('--sw', (eD + eOV).toFixed(1) + 'px');
   }
 
   const capEl = document.getElementById('shelfCap');
@@ -690,9 +778,14 @@ function showTip(html, x, y) {
   function cap(on) {
     capEl.classList.toggle('on', on);
     const b = on ? BK[cur] : null;
+    /* 窄屏说明条只留「哪一本 + 怎么合上」，免得堆成一段长文 */
     capText.innerHTML = b
-      ? `<b>《${esc(b.t)}》</b>${esc(who(b))} · ${esc(b.pub)} ${b.py ?? ''} · 点击书或空白处合上`
-      : `共 ${N} 本 · 按读完先后排列 · 书脊厚薄 = 页数or阅读时长 · 点击任意书脊抽出翻开`;
+      ? (COMPACT
+        ? `<b>《${esc(b.t)}》</b>点击空白处合上`
+        : `<b>《${esc(b.t)}》</b>${esc(who(b))} · ${esc(b.pub)} ${b.py ?? ''} · 点击书或空白处合上`)
+      : (COMPACT
+        ? `共 ${N} 本 · 按读完先后排列 · 点击书脊翻开`
+        : `共 ${N} 本 · 按读完先后排列 · 书脊厚薄 = 页数or阅读时长 · 点击任意书脊抽出翻开`);
   }
 
   let cur = -1, busy = false;
@@ -771,18 +864,102 @@ function showTip(html, x, y) {
     }
   }, true);
 
-  /* 窄屏等比缩放：外层只占缩放后的高度，下面的内容不会被盖住 */
+  /* ---- 排版：电脑端一整层 1120×480；手机端按屏宽重排，每层 6–7 本、层数按本数自动加 ---- */
   const fitEl = document.getElementById('shelfFit');
   const scaleEl = document.getElementById('shelfScale');
-  function fit() {
-    const w = fitEl.clientWidth;
+  function layout() {
+    if (cur >= 0) {                                            // 尺寸变了：先把翻开的那本默默收回原位
+      slots[cur].classList.remove('open', 'closing');
+      cur = -1; stage.classList.remove('has-open'); hitsBox.hidden = false; cap(false);
+    }
+    const w = Math.max(240, Math.round(fitEl.clientWidth || innerWidth));
     if (!w) return;
-    const k = Math.min(1, w / DW);
-    scaleEl.style.transform = `scale(${k})`;
-    fitEl.style.height = Math.round(DH * k) + 'px';
-    placeHits();                                               // 缩放变了，热区跟着按新书脊位置重排
+    const compact = innerWidth <= 760;                          // 断点与 CSS 的 @media 760px 对齐
+    COMPACT = compact;
+    DW = compact ? Math.min(500, w) : DW_REF;
+    K = Math.min(1, w / DW);
+    GAP = compact ? 5 : 6;
+    MG = compact ? 6 : 12;
+    SAFE_L = compact ? 16 : 84;
+    SAFE_R = compact ? 12 : 56;
+    sizeBooks(compact);
+
+    /* 分层：手机端每层 6–7 本（屏越窄每层越少），层数按本数自动加、每层本数尽量均匀；电脑端 14 本一层 */
+    let rowLists = [];
+    if (compact) {
+      const per = DW < 300 ? 6 : 7;
+      const nRows = Math.ceil(N / per);
+      const base = Math.floor(N / nRows), extra = N % nRows;
+      let at = 0;
+      for (let r = 0; r < nRows; r++) {
+        const cnt = base + (r < extra ? 1 : 0);
+        rowLists.push(BK.slice(at, at + cnt)); at += cnt;
+      }
+    } else {
+      rowLists = [BK];
+    }
+    ROWS = rowLists.length;
+
+    let maxH = 0;
+    rowLists.forEach(l => l.forEach(b => { maxH = Math.max(maxH, b.H); }));
+    FOOT = compact ? 22 : 63;
+    ROWH = compact ? maxH + 52 : DH_REF;
+    DH = compact ? ROWS * ROWH + 8 : DH_REF;
+    PH = compact ? 10 : 16;
+
+    /* 逐层排：厚度按页数，先缩到放得下，手机端再拉伸到铺满整行（最多 1.18 倍，免得书脊糊成一片） */
+    const PAD = compact ? 14 : 0;
+    rowLists.forEach((list, r) => {
+      const ytop = compact ? (r + 1) * ROWH - FOOT : 417;
+      const inner = DW - PAD * 2 - GAP * (list.length - 1);
+      let sum = list.reduce((a, b) => a + b.W, 0);
+      let k = 1;
+      if (sum > inner) k = inner / sum;
+      else if (compact) k = Math.min(1.18, inner / sum);
+      if (k !== 1) list.forEach(b => { b.W = Math.max(20, Math.round(b.W * k)); });
+      sum = list.reduce((a, b) => a + b.W, 0);
+      let acc = Math.max(PAD, (DW - sum - GAP * (list.length - 1)) / 2);
+      list.forEach((b, j) => { b.row = r; b.rowPos = j; b.rowList = list; b.ytop = ytop; b.x = acc; acc += b.W + GAP; });
+    });
+
+    BK.forEach(b => {
+      const n = len(b.t);
+      b.fs = compact ? (b.W >= 52 ? 15 : b.W >= 40 ? 13.5 : 12) : (b.W >= 62 ? 17 : b.W >= 54 ? 16 : 15);
+      b.cfs = Math.round((n >= 6 ? 21 : n === 5 ? 23 : 26) * (compact ? .68 : 1));
+    });
+
+    scaleEl.style.setProperty('--dw', DW + 'px');
+    scaleEl.style.setProperty('--dh', DH + 'px');
+    scaleEl.style.transform = `scale(${K})`;
+    fitEl.style.height = Math.round(DH * K) + 'px';
+    stage.style.setProperty('--tilt', compact ? '-4deg' : '-6deg');
+    stage.style.setProperty('--lift', (compact ? 20 : 84) + 'px');
+    stage.style.setProperty('--zl', (compact ? 90 : 150) + 'px');
+
+    planksBox.innerHTML = rowLists.map(list => {
+      const ytop = list[0].ytop;
+      return `<div class="plank" style="--ytop:${ytop}px;--ph:${PH}px"><div class="plank-top" style="--pdepth:${compact ? 110 : 230}px"></div><div class="plank-face"></div></div>`
+        + `<div class="plank-glow" style="--ytop:${ytop}px;--ph:${PH}px;--pgh:${compact ? 34 : 60}px"></div>`;
+    }).join('');
+
+    BK.forEach(b => {
+      const sl = slots[b.idx];
+      sl.style.setProperty('--x', b.x + b.W + 'px');
+      sl.style.setProperty('--x0', b.x + b.W + 'px');
+      sl.style.setProperty('--x1', b.x + b.W + 'px');
+      sl.style.setProperty('--ytop', b.ytop + 'px');
+      sl.style.setProperty('--h', b.H + 'px');
+      sl.style.setProperty('--d', b.D + 'px');
+      sl.style.setProperty('--t', b.W + 'px');
+      sl.style.setProperty('--fs', b.fs + 'px');
+      sl.style.setProperty('--cfs', b.cfs + 'px');
+    });
+    stage.classList.add('no-anim');                             // 量热区前先别做过渡动画，否则量到的是旧位置
+    placeHits();                                                // 尺寸变了，热区跟着按新书脊位置重排
+    requestAnimationFrame(() => stage.classList.remove('no-anim'));
+    if (cur < 0) cap(false);                                    // 文案按当前端（手机 / 电脑）重写一遍说明条
   }
-  addEventListener('resize', () => { fit(); layoutBooks(); });
+  addEventListener('resize', () => { layout(); layoutBooks(); });
 
   /* 书单列：逐行实时测量文字实际宽度，一行确实放不下才往下收信息 */
   function layoutBooks() {
@@ -829,13 +1006,13 @@ function showTip(html, x, y) {
     wrap.dataset.mode = m;
     shelfView.hidden = m !== 'shelf';
     hint.textContent = m === 'shelf' ? '点击书脊 · 抽出 · 转身 · 翻开' : '原来的书单 · 往下是图表';
-    if (m !== 'shelf') close(); else requestAnimationFrame(() => { fit(); placeHits(); });
+    if (m !== 'shelf') close(); else requestAnimationFrame(() => { layout(); placeHits(); });
     setTimeout(layoutBooks, 60);           // 表格显示出来之后重新量列宽（不派发假的 resize：会触发「保持锚点」把页面滚走）
   }
   modeBtns.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
   cap(false);
-  fit();
+  layout();
   wrap.querySelector('.bk-rows').classList.add('in');     // 表格逐行展开（只在该模式显示时看得到）
 
 
@@ -874,14 +1051,13 @@ function showTip(html, x, y) {
   ringDefault();
   document.getElementById('ringNote').textContent = '※ 一格就是一本书，同色即同类型';
 
-  /* ---- 作者：只列阿加莎、卡尔、奎因三位，卡里是书脊缩略 ---- */
+  /* ---- 作者：只列阿加莎、奎因、卡尔三位（顺序：奎因在卡尔前），卡里是书脊缩略；卡上只写作者名，不带国籍前缀 ---- */
   const ms = b => `<span class="ms" title="${esc(b.t)}"><i style="--c:${b.c};--ink:${b.light ? '#2a2521' : '#efe7d6'};--g:${GCOL[b.g]};--mw:${Math.round(b.W * .46)}px;--mh:${Math.round(62 + (b.H - HMIN) / Math.max(1, HMAX - HMIN) * 40)}px">${esc(b.t)}</i></span>`;
-  const AU_KEEP = ['阿加莎·克里斯蒂', '约翰·迪克森·卡尔', '埃勒里·奎因'];
-  const aus = AU_KEEP.map(name => ({ name, nat: (BK.find(b => b.short === name) || { nat: '' }).nat, bs: BK.filter(b => b.short === name) })).filter(a => a.bs.length);
+  const AU_KEEP = ['阿加莎·克里斯蒂', '埃勒里·奎因', '约翰·迪克森·卡尔'];
+  const aus = AU_KEEP.map(name => ({ name, bs: BK.filter(b => b.short === name) })).filter(a => a.bs.length);
   document.getElementById('auGrid').innerHTML = aus.map(a => `
     <article class="au-card">
       <div class="ah"><h4>${esc(a.name)}</h4><span class="cnt">${a.bs.length} 本</span></div>
-      <div class="areg">${a.nat ? esc(a.nat) : ''}</div>
       <div class="aspines">${a.bs.map(ms).join('')}</div>
     </article>`).join('');
 
@@ -896,6 +1072,103 @@ function showTip(html, x, y) {
   const md = s => `${+s.slice(5, 7)} 月 ${+s.slice(8, 10)} 日`;
   document.getElementById('bkLede').innerHTML = `电影之外，今年读完了 <em>${N} 本书</em>：从 ${md(dated[0].d)} 到 ${md(dated[dated.length - 1].d)}，大约每 ${(365 / N).toFixed(1)} 天一本。`;
 })();
+
+/* ---------- 窗口缩放 / 切全屏后停在原处：取视口 38% 高度处那一个元素当锚点，按它换算回滚动位置 ----------
+   影视页同一套机制（见 2026.MovieReview.html），书籍页这里补上：
+   屏宽一变书脊重排、段落折行，整页高度跟着变，不做这一步就会「上下乱动」 */
+(() => {
+  const RATIO = 0.38;                        // 锚点高度：视口 38% 处
+  if (!document.querySelector('#bkWrap')) return;
+  let cur = null, snap = null, timer = 0, moved = false;
+
+  /* 从命中的那个元素往上攒一条祖先链（最多 5 层），按「视口 38% 线在它内部的位置」记；
+     重排后某个元素被重建（书架热区就是这么被换掉的）时，就往上一层找还活着的那个 */
+  const chainOf = (el, p) => {
+    const list = [];
+    let e = el;
+    while (e && e !== document.body && e !== document.documentElement && list.length < 5) {
+      const r = e.getBoundingClientRect();
+      if (r.height >= 2) list.push({ el: e, r: Math.min(1, Math.max(0, (p - r.top) / r.height)) });
+      e = e.parentElement;
+    }
+    return list;
+  };
+
+  const pick = () => {
+    const p = innerHeight * RATIO;
+    for (const e of document.elementsFromPoint(innerWidth * .5, p)) {
+      if (!e || e === document.body || e === document.documentElement) continue;
+      const r = e.getBoundingClientRect();
+      if (r.height < 2) continue;
+      const cs = getComputedStyle(e);
+      if (cs.position === 'fixed' || cs.position === 'sticky') continue;   // 固定 / 粘性元素不随滚动走，不能当锚
+      if (cs.visibility === 'hidden' || cs.opacity === '0') continue;
+      /* 书架里的书是绝对定位 + 3D，位置随屏宽整块重排，拿单本书当锚会算歪：
+         这一整块改用 #bkWrap 自身当锚，并且记「视口 38% 线落在它顶边下方多少像素」而不是百分比
+         —— 书架重排后整块高度会变，按百分比算会跟着漂 */
+      const shelf = e.closest('#bkWrap');
+      if (shelf) {
+        const hr = shelf.getBoundingClientRect();
+        if (hr.height < 2) continue;
+        return { list: [{ el: shelf, r: Math.min(1, Math.max(0, (p - hr.top) / hr.height)) }], off: p - hr.top, byOffset: true };
+      }
+      const list = chainOf(e, p);
+      return list.length ? { list, off: 0, byOffset: false } : null;
+    }
+    return null;
+  };
+
+  const capture = () => { const a = pick(); if (a) cur = a; };
+
+  const fix = () => {
+    if (!snap) return;
+    if (moved) { snap = null; return; }       // 用户自己滚过，就不抢位置了
+    let m = null, at = 0;
+    for (const c of snap.list) {
+      if (!c.el || !c.el.isConnected) continue;          // 元素被重建，换上层
+      const b = c.el.getBoundingClientRect();
+      if (b.height < 2) continue;
+      m = { top: b.top + window.scrollY, h: b.height };
+      at = snap.byOffset ? Math.min(m.h, snap.off) : c.r * m.h;
+      break;
+    }
+    if (!m) { snap = null; return; }
+    const want = m.top + at - innerHeight * RATIO;
+    if (Math.abs(want - window.scrollY) > 3) window.scrollTo({ top: want, left: 0, behavior: 'instant' });
+  };
+
+  capture();
+  setInterval(() => { if (!snap) capture(); }, 250);   // 位置用定时采样，不依赖 scroll 事件
+  addEventListener('load', capture);
+  ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach((ev) =>
+    addEventListener(ev, () => { if (snap) moved = true; }, { passive: true }));
+
+  const settle = () => {
+    if (!snap && cur) snap = cur;
+    moved = false;
+    /* 书架重排由上面那个 resize 监听（先注册、先执行）负责，这里只对位置 */
+    fix();
+    requestAnimationFrame(fix);               // 有的重排落在下一帧
+    clearTimeout(timer);
+    timer = setTimeout(() => {                 // 收尾：补几次，吃掉残留位移
+      fix(); setTimeout(fix, 240); setTimeout(fix, 700);
+      setTimeout(() => { fix(); snap = null; }, 1500);
+    }, 120);
+  };
+
+  addEventListener('resize', settle);
+  /* 全屏进出：尺寸变化晚一两帧才落地，再来一遍 */
+  document.addEventListener('fullscreenchange', () => {
+    settle();
+    setTimeout(settle, 300);
+    setTimeout(settle, 900);
+  });
+})();
 </script>
 </body>
 </html>
+
+
+
+
+
